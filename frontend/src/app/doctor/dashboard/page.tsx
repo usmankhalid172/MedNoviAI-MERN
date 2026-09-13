@@ -1,3 +1,5 @@
+"use client";
+
 import PageLayout from "@/components/shared/PageLayout";
 import StatCard from "@/components/shared/StatCard";
 import LoadingSpinner from "@/components/shared/LoadingSpinner";
