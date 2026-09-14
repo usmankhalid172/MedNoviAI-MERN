@@ -13,12 +13,14 @@ interface User {
 interface AuthContextType {
   isLoggedIn: boolean;
   user: User | null;
+  login: (user: User) => void;
   logout: () => void;
 }
 
 export const AuthContext = createContext<AuthContextType>({
   isLoggedIn: false,
   user: null,
+  login: () => {},
   logout: () => {},
 });
 
@@ -44,8 +46,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setUser(null);
   };
 
+  const login = (nextUser: User) => {
+    setIsLoggedIn(true);
+    setUser(nextUser);
+  };
+
   return (
-    <AuthContext.Provider value={{ isLoggedIn, user, logout }}>
+    <AuthContext.Provider value={{ isLoggedIn, user, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

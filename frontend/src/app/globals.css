@@ -4,6 +4,33 @@
 
 @custom-variant dark (&:is(.dark *));
 
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+.auth-input {
+  width: 100%;
+  height: 2.75rem;
+  border: 1px solid #d5e2ef;
+  border-radius: 0.75rem;
+  background: #f8fbff;
+  padding: 0 0.875rem;
+  color: #173b68;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.auth-input::placeholder {
+  color: #91a2b4;
+}
+
+.auth-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.14);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -128,4 +155,219 @@
   html {
     @apply font-sans;
   }
+}
+
+.landing-page > section:nth-of-type(3),
+.landing-page > section:nth-of-type(5),
+.landing-page > section:nth-of-type(6) {
+  background: #102f5f !important;
+  border-color: #244f87 !important;
+  color: #ffffff;
+}
+
+.landing-page > section:nth-of-type(4) {
+  background: #123b6d !important;
+  border-color: #244f87 !important;
+  color: #ffffff;
+}
+
+.landing-page > section:nth-of-type(3) > p,
+.landing-page > section:nth-of-type(4) > p,
+.landing-page > section:nth-of-type(5) > p,
+.landing-page > section:nth-of-type(6) > p {
+  color: #dbeafe !important;
+}
+
+.landing-page > section:nth-of-type(3) h2,
+.landing-page > section:nth-of-type(4) h2,
+.landing-page > section:nth-of-type(5) h2,
+.landing-page > section:nth-of-type(6) h2 {
+  color: #ffffff;
+}
+
+.landing-page > section:nth-of-type(3) h2 + p,
+.landing-page > section:nth-of-type(4) h2 + p,
+.landing-page > section:nth-of-type(5) h2 + p,
+.landing-page > section:nth-of-type(6) h2 + p {
+  color: #bfdbfe;
+}
+
+.landing-page {
+  background: #102f5f;
+}
+
+.landing-page > section {
+  background: #102f5f !important;
+  border-color: #244f87 !important;
+  color: #ffffff;
+}
+
+.landing-page > section:first-of-type {
+  background: #102f5f !important;
+}
+
+.landing-page > section > div:not(.absolute),
+.landing-page > section .bg-white,
+.landing-page > section .bg-\[\#fdfdfc\],
+.landing-page > section .bg-\[\#f8fbff\],
+.landing-page > section .bg-\[\#f4f9ff\] {
+  background-color: #102f5f !important;
+}
+
+.landing-page h1,
+.landing-page h2,
+.landing-page h3,
+.landing-page p,
+.landing-page span,
+.landing-page a {
+  color: #ffffff;
+}
+
+.landing-page .text-\[\#777\],
+.landing-page .text-\[\#60758b\],
+.landing-page .text-\[\#60758b\],
+.landing-page .text-\[\#71879b\],
+.landing-page .text-\[\#697783\],
+.landing-page .text-\[\#66717c\],
+.landing-page .text-\[\#707984\],
+.landing-page .text-\[\#6d7e7a\] {
+  color: #dbeafe !important;
+}
+
+.landing-page .border-\[\#dedede\],
+.landing-page .border-\[\#cfe0f5\],
+.landing-page .border-\[\#dce8f8\],
+.landing-page .border-\[\#d9ebe4\] {
+  border-color: #3769a4 !important;
+}
+
+.landing-page .bg-\[\#e8f1ff\],
+.landing-page .bg-\[\#e4efff\],
+.landing-page .bg-\[\#d9ecff\],
+.landing-page .bg-\[\#e7f1ff\],
+.landing-page .bg-\[\#e1efff\] {
+  background-color: #1e4f8d !important;
+}
+
+.landing-page > section .rounded-xl,
+.landing-page > section .rounded-2xl {
+  background: #163e76 !important;
+  background-image: none !important;
+  border-color: #3769a4 !important;
+}
+
+.landing-page > section .rounded-xl p,
+.landing-page > section .rounded-2xl p {
+  color: #dbeafe;
+}
+
+.landing-page,
+.landing-page h1,
+.landing-page h2,
+.landing-page h3,
+.landing-page p,
+.landing-page span,
+.landing-page a,
+.landing-page button {
+  color: #ffffff !important;
+}
+
+.landing-page svg {
+  color: #ffffff;
+}
+
+.landing-page > section:nth-of-type(6) svg {
+  color: #facc15 !important;
+  fill: #facc15;
+}
+
+.landing-page > section:nth-of-type(4) .group:nth-child(1) > div:first-child > div:first-child {
+  background-image: url("https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=900&q=90") !important;
+}
+
+.landing-page > section:nth-of-type(4) .group:nth-child(2) > div:first-child > div:first-child {
+  background-image: url("https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=85") !important;
+}
+
+.landing-page > section:nth-of-type(4) .group:nth-child(3) > div:first-child > div:first-child {
+  background-image: url("https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=900&q=85") !important;
+}
+
+.landing-page > section:nth-of-type(4) .group > div:last-child {
+  display: none;
+}
+
+.doctor-profile-page {
+  background: #102f5f;
+  color: #ffffff;
+}
+
+.doctor-profile-page [data-slot="card"],
+.doctor-profile-page [data-slot="tabs-list"] {
+  background: #163e76 !important;
+  border: 1px solid #3769a4;
+  color: #ffffff !important;
+}
+
+.doctor-profile-page h1,
+.doctor-profile-page h2,
+.doctor-profile-page h3,
+.doctor-profile-page p,
+.doctor-profile-page span,
+.doctor-profile-page li,
+.doctor-profile-page label {
+  color: #ffffff;
+}
+
+.doctor-profile-page .text-muted-foreground {
+  color: #dbeafe !important;
+}
+
+.doctor-profile-page .text-primary,
+.doctor-profile-page .text-blue-600,
+.doctor-profile-page .text-blue-700 {
+  color: #93c5fd !important;
+}
+
+.doctor-profile-page .bg-blue-100,
+.doctor-profile-page .bg-green-100,
+.doctor-profile-page .bg-muted,
+.doctor-profile-page .bg-primary\/10,
+.doctor-profile-page .bg-primary\/20 {
+  background-color: #1e4f8d !important;
+}
+
+.doctor-profile-page .border-border,
+.doctor-profile-page .border-primary\/20 {
+  border-color: #4b7db5 !important;
+}
+
+.doctor-profile-page [data-slot="tabs-trigger"] {
+  color: #dbeafe !important;
+}
+
+.doctor-profile-page [data-slot="tabs-trigger"][data-state="active"] {
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+.doctor-profile-page button:not([data-slot="tabs-trigger"]) {
+  color: #ffffff;
+}
+
+.doctor-profile-page .bg-gradient-to-r {
+  background: linear-gradient(90deg, #1e4f8d, #163e76) !important;
+}
+
+.doctor-profile-page .bg-gradient-to-br {
+  background: linear-gradient(135deg, #1e4f8d, #163e76) !important;
+}
+
+.doctor-profile-page .hover\:bg-muted:hover,
+.doctor-profile-page .hover\:bg-accent:hover {
+  background-color: #2563eb !important;
+}
+
+.landing-page a.hover\:bg-\[\#eff6ff\]:hover {
+  background-color: #ffffff !important;
 }

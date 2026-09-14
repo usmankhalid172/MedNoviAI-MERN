@@ -82,6 +82,36 @@ const mockDoctor: Doctor = {
   ],
 };
 
+const featuredDoctors: Doctor[] = [
+  mockDoctor,
+  {
+    ...mockDoctor,
+    id: "2",
+    name: "Dr. Hamza Khan",
+    specialty: "General Physician",
+    rating: 4.8,
+    reviewCount: 218,
+    experience: 9,
+    fee: 2200,
+    about: "Dr. Hamza Khan provides thoughtful first consultations for common symptoms and everyday health concerns. He focuses on clear explanations, practical guidance, and patient-centered care.",
+    education: ["MBBS — Aga Khan University, Karachi", "FCPS (Medicine) — CPSP Pakistan"],
+    certifications: ["Pakistan Medical & Dental Council (PMDC)", "Primary Care Medicine Certification"],
+  },
+  {
+    ...mockDoctor,
+    id: "3",
+    name: "Dr. Ayesha Malik",
+    specialty: "Dermatologist",
+    rating: 4.9,
+    reviewCount: 286,
+    experience: 10,
+    fee: 2500,
+    about: "Dr. Ayesha Malik offers practical, evidence-based guidance for skin health, treatment options, and long-term care routines.",
+    education: ["MBBS — University of Lahore", "FCPS (Dermatology) — CPSP Pakistan"],
+    certifications: ["Pakistan Medical & Dental Council (PMDC)", "American Academy of Dermatology Member"],
+  },
+];
+
 const mockReviews: Review[] = [
   {
     id: "r1",
@@ -89,7 +119,7 @@ const mockReviews: Review[] = [
     rating: 5,
     date: "2 weeks ago",
     comment:
-      "Excellent doctor. She explained everything clearly and made me feel comfortable. Highly recommended!",
+      "Excellent doctor. They explained everything clearly and made me feel comfortable. Highly recommended!",
   },
   {
     id: "r2",
@@ -97,7 +127,7 @@ const mockReviews: Review[] = [
     rating: 5,
     date: "1 month ago",
     comment:
-      "Very professional and caring. The treatment plan worked really well for my condition.",
+      "Very professional and caring. The treatment plan was explained clearly and worked really well for my condition.",
   },
   {
     id: "r3",
@@ -111,9 +141,9 @@ const mockReviews: Review[] = [
 
 const faqs = [
   {
-    question: "What conditions does Dr. Sarah Ahmed treat?",
+    question: "What conditions does this doctor treat?",
     answer:
-      "She treats a wide range of heart conditions including hypertension, coronary artery disease, heart failure, arrhythmias, and valve disorders.",
+      "This doctor provides care within their listed specialty and can explain the right treatment options during your consultation.",
   },
   {
     question: "How can I book an appointment?",
@@ -126,9 +156,9 @@ const faqs = [
       "The consultation fee is PKR 3,000. Follow-up visits within 14 days are free of charge.",
   },
   {
-    question: "Does she offer online consultations?",
+    question: "Does this doctor offer online consultations?",
     answer:
-      "Yes, video consultations are available for follow-up appointments. Please select the 'Online' option when booking.",
+      "Video consultations may be available for follow-up appointments. Please check the available booking options before confirming.",
   },
 ];
 
@@ -361,7 +391,7 @@ function CalendarWithSlots({
 /* --------------------------- Main view ----------------------------- */
 
 export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
-  const doctor = { ...mockDoctor, id: doctorId };
+  const doctor = featuredDoctors.find((profile) => profile.id === doctorId) ?? mockDoctor;
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
@@ -388,7 +418,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
 
   return (
     <PageLayout>
-      <div className="mx-auto max-w-5xl space-y-8 py-6">
+      <div className="doctor-profile-page mx-auto max-w-5xl space-y-8 rounded-3xl px-3 py-6 sm:px-5 md:py-8">
         {/* ---------- Hero / Profile card ---------- */}
         <Card className="border-0 shadow-lg">
           <CardContent className="p-6 md:p-8">
