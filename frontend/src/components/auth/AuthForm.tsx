@@ -58,6 +58,15 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
   const isSignUp = mode === "signup";
 
+  // Helper for role-based dynamic redirection
+  const handleRoleRedirect = (userRole: Role) => {
+    if (userRole === "doctor") {
+      router.push("/doctor/dashboard");
+    } else {
+      router.push("/patient/dashboard");
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorMessage("");
@@ -77,11 +86,22 @@ export default function AuthForm({ mode }: AuthFormProps) {
             throw new Error("An account with this email already exists. Please sign in.");
           }
 
-          saveLocalUsers([
-            ...users,
-            { id: crypto.randomUUID(), name, email, password, role, specialty: role === "doctor" ? specialty : undefined },
-          ]);
-          router.push("/login");
+          const newUser: LocalUser = {
+            id: crypto.randomUUID(),
+            name,
+            email,
+            password,
+            role,
+            specialty: role === "doctor" ? specialty : undefined,
+          };
+
+          saveLocalUsers([...users, newUser]);
+
+          // Auto login and direct redirect on signup
+          const localToken = btoa(JSON.stringify({ sub: newUser.id, role: newUser.role }));
+          saveToken(localToken);
+          login({ id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role });
+          handleRoleRedirect(newUser.role);
           return;
         }
 
@@ -93,7 +113,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
         const localToken = btoa(JSON.stringify({ sub: user.id, role: user.role }));
         saveToken(localToken);
         login({ id: user.id, name: user.name, email: user.email, role: user.role });
-        router.push("/");
+        handleRoleRedirect(user.role);
         return;
       }
 
@@ -103,26 +123,27 @@ export default function AuthForm({ mode }: AuthFormProps) {
         : { email, password, role };
       const response = await api.post(endpoint, payload);
 
-      if (isSignUp) {
-        router.push("/login");
-        return;
-      }
-
       const token = response.data?.token || response.data?.accessToken || response.data?.data?.token;
 
-      if (!token) {
+      if (!token && !isSignUp) {
         throw new Error("The server did not return an authentication token.");
       }
 
-      saveToken(token);
-      login({
-        id: response.data?.user?.id || response.data?.user?._id,
-        name: response.data?.user?.name || name,
-        email: response.data?.user?.email || email,
-        role: response.data?.user?.role || role,
-      });
+      const userRole = response.data?.user?.role || role;
+      const userName = response.data?.user?.name || name;
+      const userId = response.data?.user?.id || response.data?.user?._id;
 
-      router.push("/");
+      if (token) {
+        saveToken(token);
+        login({
+          id: userId,
+          name: userName,
+          email: response.data?.user?.email || email,
+          role: userRole,
+        });
+      }
+
+      handleRoleRedirect(userRole);
     } catch (error) {
       setErrorMessage(error instanceof Error && !("response" in error) ? error.message : getErrorMessage(error));
     } finally {

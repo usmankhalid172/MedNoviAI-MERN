@@ -1,23 +1,26 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import {
     ArrowRight,
     Bot,
     CalendarDays,
     CheckCircle2,
-    ClipboardList,
     Clock3,
     HeartPulse,
     MessageCircle,
     ShieldCheck,
     Sparkles,
     Star,
-    Stethoscope,
     UserRound,
 } from "lucide-react";
 import Footer from "@/components/shared/Footer";
 import FAQSection from "@/components/shared/FAQSection";
 import DoctorProfileLinkFix from "@/components/shared/DoctorProfileLinkFix";
 import Navbar from "@/components/shared/Navbar";
+import { useAuth } from "@/hooks/useAuth";
 
 const doctors = [
     { id: "1", name: "Dr. Sarah Ahmed", specialty: "Cardiologist", rating: "4.9", initials: "SA", color: "bg-[#d9ecff]", description: "Helps patients understand heart health, prevention, and everyday wellness." },
@@ -43,6 +46,20 @@ function BrainIcon() {
 }
 
 export default function Home() {
+    const router = useRouter();
+    const { user } = useAuth();
+
+    // Auto-redirect if user is already logged in
+    useEffect(() => {
+        if (user) {
+            if (user.role === "doctor") {
+                router.replace("/doctor/dashboard");
+            } else {
+                router.replace("/patient/dashboard");
+            }
+        }
+    }, [user, router]);
+
     return (
         <div className="min-h-screen bg-[#fcfcfb] text-[#171717]">
             <Navbar />
@@ -54,8 +71,11 @@ export default function Home() {
                         <h1 className="max-w-xl text-4xl font-bold leading-[1.08] tracking-[-0.04em] text-[#111827] sm:text-6xl">Your AI-Powered Health Assistant — <span className="text-[#2563eb]">Book Doctors Instantly</span></h1>
                         <p className="mt-5 max-w-lg text-base leading-7 text-[#68717c] sm:text-lg">Describe your symptoms, get doctor recommendations, and book appointments in minutes.</p>
                         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                            <Link href="/signup" className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#2563eb] px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#1d4ed8]">Book an Appointment <ArrowRight className="size-4" /> </Link>
-                            <Link href="/chat" className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#2563eb] bg-white px-5 text-sm font-semibold text-[#2563eb] transition-colors"> Chat with AI <MessageCircle className="size-4" /></Link></div>
+                            <Link href={user ? (user.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard") : "/signup"} className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-[#2563eb] px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#1d4ed8]">
+                                {user ? `Go to Dashboard (${user.name})` : "Book an Appointment"} <ArrowRight className="size-4" />
+                            </Link>
+                            <Link href="/chat" className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#2563eb] bg-white px-5 text-sm font-semibold text-[#2563eb] transition-colors"> Chat with AI <MessageCircle className="size-4" /></Link>
+                        </div>
                         <div className="mt-8 flex flex-wrap gap-5 text-xs font-medium text-[#66717c]"><span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-4 text-[#10b981]" /> Secure and private</span><span className="inline-flex items-center gap-1.5"><Clock3 className="size-4 text-[#10b981]" /> Available 24/7</span></div>
                     </div>
                     <div className="relative mt-12 flex min-h-[280px] items-end justify-center lg:mt-0 lg:min-h-[390px]"><div className="absolute bottom-0 h-64 w-64 rounded-full bg-[#dbeafe] sm:h-80 sm:w-80" /><div className="relative z-10 flex h-64 w-52 items-end justify-center rounded-t-[7rem] bg-[#b8d7ff] sm:h-80 sm:w-64"><div className="absolute bottom-0 h-40 w-44 rounded-t-[6rem] bg-[#2563eb] sm:h-48 sm:w-52" /><div className="absolute bottom-36 size-28 rounded-full bg-[#f1b28f] sm:bottom-44 sm:size-32" /><div className="absolute bottom-[13.8rem] h-12 w-36 rounded-t-full bg-[#253b67] sm:bottom-[17rem]" /><div className="absolute bottom-[13.2rem] left-16 h-1.5 w-1.5 rounded-full bg-[#1f2937] sm:bottom-[16.4rem] sm:left-20" /><div className="absolute bottom-[13.2rem] right-16 h-1.5 w-1.5 rounded-full bg-[#1f2937] sm:bottom-[16.4rem] sm:right-20" /><div className="absolute bottom-[11.7rem] h-5 w-10 rounded-b-full border-b-2 border-[#c46f65] sm:bottom-[14.8rem]" /></div><div className="absolute bottom-4 right-0 z-20 rounded-lg border border-[#dbe5f2] bg-white p-3 text-xs shadow-lg sm:right-4"><div className="flex items-center gap-2 font-semibold text-white"><HeartPulse className="size-4 text-[#10b981]" /> </div><p className="mt-1 text-[#89919b]">Talk to our AI assistant</p></div></div>
@@ -111,9 +131,9 @@ export default function Home() {
                         </div>
                 </section>
 
-                <section className="border-x border-b border-[#dedede] bg-white px-6 py-10 sm:px-10 sm:py-12"><div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1d4ed8] via-[#2563eb] to-[#4f46e5] px-6 py-10 text-center text-white shadow-xl shadow-[#2563eb]/20 sm:px-10"><div className="absolute -right-16 -top-20 size-52 rounded-full border border-white/20" /><div className="absolute -bottom-24 -left-10 size-56 rounded-full border border-white/15" /><div className="relative"><span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-blue-100"><Sparkles className="size-3.5" /> Your care journey starts here</span><h2 className="mx-auto mt-4 max-w-2xl text-2xl font-bold tracking-[-0.02em] sm:text-3xl">Ready to get started? Join thousands of patients today.</h2><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-blue-100">Take the first step toward clearer health decisions. Chat with MedNoviAI, explore trusted doctors, and book your appointment when you are ready.</p><div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row"><Link href="/signup" className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-5 text-sm font-semibold text-[#2563eb] shadow-sm transition-colors hover:bg-blue-50">Register for Free <ArrowRight className="size-4" /></Link><Link href="/login" className="inline-flex h-11 items-center justify-center rounded-lg border border-white/60 px-5 text-sm font-semibold text-white transition-colors hover:bg-white/10">Login</Link></div></div></div></section>
+                <section className="border-x border-b border-[#dedede] bg-white px-6 py-10 sm:px-10 sm:py-12"><div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1d4ed8] via-[#2563eb] to-[#4f46e5] px-6 py-10 text-center text-white shadow-xl shadow-[#2563eb]/20 sm:px-10"><div className="absolute -right-16 -top-20 size-52 rounded-full border border-white/20" /><div className="absolute -bottom-24 -left-10 size-56 rounded-full border border-white/15" /><div className="relative"><span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-blue-100"><Sparkles className="size-3.5" /> Your care journey starts here</span><h2 className="mx-auto mt-4 max-w-2xl text-2xl font-bold tracking-[-0.02em] sm:text-3xl">Ready to get started? Join thousands of patients today.</h2><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-blue-100">Take the first step toward clearer health decisions. Chat with MedNoviAI, explore trusted doctors, and book your appointment when you are ready.</p><div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row"><Link href={user ? (user.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard") : "/signup"} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-5 text-sm font-semibold text-[#2563eb] shadow-sm transition-colors hover:bg-blue-50">{user ? `Go to Dashboard (${user.name})` : "Register for Free"} <ArrowRight className="size-4" /></Link>{!user && <Link href="/login" className="inline-flex h-11 items-center justify-center rounded-lg border border-white/60 px-5 text-sm font-semibold text-white transition-colors hover:bg-white/10">Login</Link>}</div></div></div></section>
                 <FAQSection />
-				<DoctorProfileLinkFix />
+                <DoctorProfileLinkFix />
             </main>
             <Footer />
         </div>
