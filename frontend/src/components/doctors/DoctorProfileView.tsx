@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PageLayout from "@/components/shared/PageLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,13 +23,12 @@ import {
   Clock,
   GraduationCap,
   Briefcase,
-  ThumbsUp,
   ChevronLeft,
   ChevronRight,
   CalendarCheck,
-  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /* ------------------------------ Types ------------------------------ */
 
@@ -45,75 +47,17 @@ interface Doctor {
   certifications: string[];
 }
 
-interface Review {
-  id: string;
-  patientName: string;
-  rating: number;
+interface Slot {
   date: string;
-  comment: string;
+  time: string;
+  status: "available" | "booked";
 }
-
-interface DaySlot {
-  date: Date;
-  slots: string[];
-}
-
-/* --------------------------- Mock data ---------------------------- */
-
-const mockDoctor: Doctor = {
-  id: "1",
-  name: "Dr. Sarah Ahmed",
-  specialty: "Cardiologist",
-  rating: 4.8,
-  reviewCount: 324,
-  experience: 12,
-  fee: 3000,
-  location: "Shifa International Hospital, Islamabad",
-  about:
-    "Dr. Sarah Ahmed is a board-certified cardiologist with over 12 years of experience in diagnosing and treating cardiovascular diseases. She specializes in interventional cardiology, heart failure management, and preventive cardiology. She is dedicated to providing patient-centered care with the latest evidence-based treatments.",
-  education: [
-    "MBBS — King Edward Medical University, Lahore",
-    "FCPS (Cardiology) — Aga Khan University, Karachi",
-    "Fellowship in Interventional Cardiology — UK",
-  ],
-  certifications: [
-    "Pakistan Medical & Dental Council (PMDC)",
-    "European Society of Cardiology (ESC)",
-  ],
-};
-
-const mockReviews: Review[] = [
-  {
-    id: "r1",
-    patientName: "Ali Raza",
-    rating: 5,
-    date: "2 weeks ago",
-    comment:
-      "Excellent doctor. She explained everything clearly and made me feel comfortable. Highly recommended!",
-  },
-  {
-    id: "r2",
-    patientName: "Fatima Khan",
-    rating: 5,
-    date: "1 month ago",
-    comment:
-      "Very professional and caring. The treatment plan worked really well for my condition.",
-  },
-  {
-    id: "r3",
-    patientName: "Bilal Hussain",
-    rating: 4,
-    date: "2 months ago",
-    comment:
-      "Good experience overall, waiting time was a bit long but the consultation was worth it.",
-  },
-];
 
 const faqs = [
   {
-    question: "What conditions does Dr. Sarah Ahmed treat?",
+    question: "What conditions does this doctor treat?",
     answer:
-      "She treats a wide range of heart conditions including hypertension, coronary artery disease, heart failure, arrhythmias, and valve disorders.",
+      "This doctor provides care within their listed specialty and can explain the right treatment options during your consultation.",
   },
   {
     question: "How can I book an appointment?",
@@ -121,14 +65,9 @@ const faqs = [
       "Select an available date and time slot from the Availability tab, then click the 'Book Appointment' button to confirm your booking.",
   },
   {
-    question: "What is the consultation fee?",
+    question: "Does this doctor offer online consultations?",
     answer:
-      "The consultation fee is PKR 3,000. Follow-up visits within 14 days are free of charge.",
-  },
-  {
-    question: "Does she offer online consultations?",
-    answer:
-      "Yes, video consultations are available for follow-up appointments. Please select the 'Online' option when booking.",
+      "Video consultations may be available for follow-up appointments. Please check the available booking options before confirming.",
   },
 ];
 
@@ -148,21 +87,6 @@ const MONTHS = [
   "October",
   "November",
   "December",
-];
-
-const allTimeSlots = [
-  "09:00 AM",
-  "09:30 AM",
-  "10:00 AM",
-  "10:30 AM",
-  "11:00 AM",
-  "11:30 AM",
-  "02:00 PM",
-  "02:30 PM",
-  "03:00 PM",
-  "03:30 PM",
-  "04:00 PM",
-  "04:30 PM",
 ];
 
 function buildMonth(year: number, month: number) {
@@ -214,11 +138,13 @@ function CalendarWithSlots({
   onSelectDate,
   selectedSlot,
   onSelectSlot,
+  availabilitySlots,
 }: {
   selectedDate: Date;
   onSelectDate: (d: Date) => void;
   selectedSlot: string | null;
   onSelectSlot: (s: string | null) => void;
+  availabilitySlots: Slot[];
 }) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -229,11 +155,12 @@ function CalendarWithSlots({
     [viewYear, viewMonth],
   );
 
-  const bookedSlots = useMemo(() => {
-    // deterministic pseudo-booked slots per day
-    const seed = selectedDate.getDate() + selectedDate.getMonth() * 31;
-    return new Set(allTimeSlots.filter((_, i) => (seed * (i + 3)) % 7 === 0));
-  }, [selectedDate]);
+  const daySlots = useMemo(() => {
+    const dateStr = selectedDate.toISOString().split("T")[0];
+    return availabilitySlots
+      .filter((s) => s.date === dateStr)
+      .sort((a, b) => a.time.localeCompare(b.time));
+  }, [availabilitySlots, selectedDate]);
 
   const prevMonth = () => {
     const m = viewMonth === 0 ? 11 : viewMonth - 1;
@@ -323,30 +250,37 @@ function CalendarWithSlots({
               day: "numeric",
             })}
           </h3>
-          <div className="grid grid-cols-3 gap-2">
-            {allTimeSlots.map((slot) => {
-              const isBooked = bookedSlots.has(slot);
-              const isSelected = selectedSlot === slot;
-              return (
-                <button
-                  key={slot}
-                  type="button"
-                  disabled={isBooked}
-                  onClick={() => onSelectSlot(slot)}
-                  className={cn(
-                    "rounded-md border px-2 py-2 text-xs font-medium transition-colors",
-                    isBooked
-                      ? "border-dashed text-muted-foreground/40 line-through cursor-not-allowed"
-                      : isSelected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border hover:border-primary hover:text-primary",
-                  )}
-                >
-                  {slot}
-                </button>
-              );
-            })}
-          </div>
+          {daySlots.length === 0 ? (
+            <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+              No slots available for this date.
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {daySlots.map((slot) => {
+                const isBooked = slot.status === "booked";
+                const slotValue = `${slot.date}|${slot.time}`;
+                const isSelected = selectedSlot === slotValue;
+                return (
+                  <button
+                    key={slotValue}
+                    type="button"
+                    disabled={isBooked}
+                    onClick={() => onSelectSlot(slotValue)}
+                    className={cn(
+                      "rounded-md border px-2 py-2 text-xs font-medium transition-colors",
+                      isBooked
+                        ? "cursor-not-allowed border-dashed text-muted-foreground/40 line-through"
+                        : isSelected
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border hover:border-primary hover:text-primary",
+                    )}
+                  >
+                    {slot.time}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <p className="mt-3 text-xs text-muted-foreground">
             {selectedSlot
               ? `Selected: ${selectedSlot}`
@@ -361,10 +295,161 @@ function CalendarWithSlots({
 /* --------------------------- Main view ----------------------------- */
 
 export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
-  const doctor = { ...mockDoctor, id: doctorId };
+  const router = useRouter();
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [availabilitySlots, setAvailabilitySlots] = useState<Slot[]>([]);
+  const [availabilityLoading, setAvailabilityLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadDoctor() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/doctors/${doctorId}`, { cache: "no-store" });
+        if (!res.ok) {
+          if (res.status === 404) {
+            throw new Error("Doctor not found");
+          }
+          throw new Error("Failed to load doctor");
+        }
+        const data = await res.json();
+        if (!cancelled) {
+          setDoctor(data);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load doctor");
+          setDoctor(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    loadDoctor();
+    return () => { cancelled = true; };
+  }, [doctorId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAvailability() {
+      setAvailabilityLoading(true);
+      setAvailabilitySlots([]);
+      try {
+        const res = await fetch(`/api/doctors/${doctorId}/availability`, {
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error("Failed to load availability");
+        const data = await res.json();
+        if (!cancelled) {
+          setAvailabilitySlots(data.slots || []);
+        }
+      } catch {
+        if (!cancelled) {
+          setAvailabilitySlots([]);
+        }
+      } finally {
+        if (!cancelled) setAvailabilityLoading(false);
+      }
+    }
+    loadAvailability();
+    return () => { cancelled = true; };
+  }, [doctorId]);
+
+  const handleBook = async () => {
+    if (!selectedSlot || !doctor) return;
+    setBooking(true);
+    const [dateStr, time] = selectedSlot.split("|");
+    const query = new URLSearchParams({
+      doctorId: doctor.id,
+      slot: selectedSlot,
+      doctor: doctor.name,
+      specialty: doctor.specialty,
+      date: dateStr,
+      time,
+    }).toString();
+    router.push(`/appointment/book?${query}`);
+  };
+
+  if (error || (!doctor && !loading)) {
+    return (
+      <PageLayout>
+        <div className="doctor-profile-page mx-auto max-w-5xl px-3 py-6 sm:px-5 md:py-8">
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <h2 className="mb-2 text-2xl font-bold">Doctor not found</h2>
+            <p className="mb-6 text-muted-foreground">
+              The doctor you are looking for does not exist or has been removed.
+            </p>
+            <Link href="/doctors">
+              <Button variant="outline">
+                <ChevronLeft className="mr-2 size-4" />
+                Back to Doctors
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </PageLayout>
+    );
+  }
+
+  if (loading) {
+    return (
+      <PageLayout>
+        <div className="doctor-profile-page mx-auto max-w-5xl space-y-8 rounded-3xl px-3 py-6 sm:px-5 md:py-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-4" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+          <Card>
+            <CardContent className="p-6 md:p-8 space-y-6">
+              <div className="flex gap-6">
+                <Skeleton className="size-32 md:size-40 rounded-full" />
+                <div className="flex-1 space-y-3">
+                  <Skeleton className="h-8 w-64" />
+                  <Skeleton className="h-6 w-40" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Skeleton className="h-5 w-full" />
+                    <Skeleton className="h-5 w-full" />
+                    <Skeleton className="h-5 w-full" />
+                    <Skeleton className="h-5 w-full" />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <Skeleton className="h-5 w-32" />
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: 35 }).map((_, i) => (
+                    <Skeleton key={i} className="h-9 w-9 rounded-full" />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <Skeleton className="h-5 w-40" />
+                <div className="grid grid-cols-3 gap-2">
+                  {Array.from({ length: 12 }).map((_, i) => (
+                    <Skeleton key={i} className="h-8 rounded" />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </PageLayout>
+    );
+  }
 
   const initials = doctor.name
     .replace("Dr. ", "")
@@ -374,21 +459,34 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
     .slice(0, 2)
     .toUpperCase();
 
-  const handleBook = async () => {
-    if (!selectedSlot) return;
-    setBooking(true);
-    // TODO: wire to backend — POST /api/appointments
-    setTimeout(() => {
-      setBooking(false);
-      alert(
-        `Appointment booked with ${doctor.name} on ${selectedDate.toDateString()} at ${selectedSlot}`,
-      );
-    }, 800);
-  };
-
   return (
     <PageLayout>
-      <div className="mx-auto max-w-5xl space-y-8 py-6">
+      <div className="doctor-profile-page mx-auto max-w-5xl space-y-8 rounded-3xl px-3 py-6 sm:px-5 md:py-8">
+        {/* Breadcrumb */}
+        <nav className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Link href="/" className="hover:text-primary transition-colors">
+            Home
+          </Link>
+          <ChevronRight className="size-4" />
+          <Link href="/doctors" className="hover:text-primary transition-colors">
+            Doctors
+          </Link>
+          <ChevronRight className="size-4" />
+          <span className="text-foreground font-medium">
+            {doctor.name.replace("Dr. ", "")}
+          </span>
+        </nav>
+
+        {/* Back Button */}
+        <div className="flex justify-start">
+          <Link href="/doctors">
+            <Button variant="ghost" size="sm">
+              <ChevronLeft className="size-4 mr-1" />
+              Back to Doctors
+            </Button>
+          </Link>
+        </div>
+
         {/* ---------- Hero / Profile card ---------- */}
         <Card className="border-0 shadow-lg">
           <CardContent className="p-6 md:p-8">
@@ -398,7 +496,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
                   {doctor.image ? (
                     <AvatarImage src={doctor.image} alt={doctor.name} />
                   ) : null}
-                  <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary text-4xl font-bold">
+                  <AvatarFallback className="bg-linear-to-br from-primary/20 to-primary/10 text-primary text-4xl font-bold">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
@@ -534,39 +632,75 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
 
           {/* Availability */}
           <TabsContent value="availability" className="mt-6">
-            <CalendarWithSlots
-              selectedDate={selectedDate}
-              onSelectDate={(d) => {
-                setSelectedDate(d);
-                setSelectedSlot(null);
-              }}
-              selectedSlot={selectedSlot}
-              onSelectSlot={setSelectedSlot}
-            />
-            <div className="mt-6 flex justify-end">
-              <Button
-                size="lg"
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-                onClick={handleBook}
-                disabled={!selectedSlot || booking}
-              >
-                <CalendarCheck className="size-4" />
-                {booking
-                  ? "Booking..."
-                  : selectedSlot
-                    ? "Book Appointment"
-                    : "Select a Slot First"}
-              </Button>
-            </div>
+            {availabilityLoading ? (
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <Skeleton className="h-5 w-32" />
+                    <div className="grid grid-cols-7 gap-1">
+                      {Array.from({ length: 35 }).map((_, i) => (
+                        <Skeleton key={i} className="h-9 w-9 rounded-full" />
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <Skeleton className="h-5 w-40" />
+                    <div className="grid grid-cols-3 gap-2">
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <Skeleton key={i} className="h-8 rounded" />
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : availabilitySlots.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed rounded-xl">
+                <Calendar className="size-12 text-muted-foreground mb-3" />
+                <h3 className="text-lg font-semibold">Koi slot available nahi is hafte</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Availability API ready nahi hai ya koi slot nahi hai.
+                </p>
+              </div>
+            ) : (
+              <>
+                <CalendarWithSlots
+                  selectedDate={selectedDate}
+                  onSelectDate={(d) => {
+                    setSelectedDate(d);
+                    setSelectedSlot(null);
+                  }}
+                  selectedSlot={selectedSlot}
+                  onSelectSlot={setSelectedSlot}
+                  availabilitySlots={availabilitySlots}
+                />
+                <div className="mt-6 flex justify-end">
+                  <Button
+                    size="lg"
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={handleBook}
+                    disabled={!selectedSlot || booking}
+                  >
+                    <CalendarCheck className="size-4" />
+                    {booking
+                      ? "Booking..."
+                      : selectedSlot
+                        ? "Book Appointment"
+                        : "Select a Slot First"}
+                  </Button>
+                </div>
+              </>
+            )}
           </TabsContent>
 
           {/* Reviews */}
           <TabsContent value="reviews" className="mt-6 space-y-6">
-            <div className="flex items-center justify-between gap-4 bg-gradient-to-r from-primary/10 to-primary/5 p-4 rounded-lg border border-primary/20">
+            <div className="flex items-center justify-between gap-4 bg-linear-to-r from-primary/10 to-primary/5 p-4 rounded-lg border border-primary/20">
               <div>
                 <h2 className="text-lg font-bold">Patient Reviews</h2>
                 <p className="text-sm text-muted-foreground">
-                  Based on {mockReviews.length} verified patient feedback
+                  Based on {doctor.reviewCount} patient reviews
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -580,40 +714,8 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
               </div>
             </div>
 
-            <div className="space-y-4">
-              {mockReviews.map((review) => (
-                <Card key={review.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
-                  <CardContent className="p-5 space-y-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-10">
-                          <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                            {review.patientName
-                              .split(" ")
-                              .map((w) => w[0])
-                              .join("")
-                              .slice(0, 2)
-                              .toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-sm font-semibold">{review.patientName}</p>
-                          <p className="text-xs text-muted-foreground">{review.date}</p>
-                        </div>
-                      </div>
-                      <StarRating rating={review.rating} />
-                    </div>
-                    <p className="flex items-start gap-2 text-sm text-muted-foreground leading-relaxed">
-                      <MessageSquare className="mt-0.5 size-4 shrink-0 text-primary/50" />
-                      {review.comment}
-                    </p>
-                    <div className="flex items-center gap-1.5 text-xs text-green-600 pt-1">
-                      <ThumbsUp className="size-3.5" />
-                      <span>Verified Patient Review</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+            <div className="flex items-center justify-center rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              Detailed patient reviews are not available from the doctor API.
             </div>
           </TabsContent>
         </Tabs>
