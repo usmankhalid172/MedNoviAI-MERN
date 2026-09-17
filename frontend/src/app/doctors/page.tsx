@@ -29,7 +29,8 @@ const MOCK_DOCTORS: Doctor[] = [
     experience: "12 Yrs Exp",
     rating: 4.9,
     reviewsCount: 124,
-    avatar: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80",
+    avatar:
+      "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80",
   },
   {
     id: "doc-2",
@@ -39,7 +40,8 @@ const MOCK_DOCTORS: Doctor[] = [
     experience: "9 Yrs Exp",
     rating: 4.8,
     reviewsCount: 98,
-    avatar: "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80",
+    avatar:
+      "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80",
   },
   {
     id: "doc-3",
@@ -49,7 +51,8 @@ const MOCK_DOCTORS: Doctor[] = [
     experience: "15 Yrs Exp",
     rating: 4.9,
     reviewsCount: 210,
-    avatar: "https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=150&auto=format&fit=crop&q=80",
+    avatar:
+      "https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=150&auto=format&fit=crop&q=80",
   },
   {
     id: "doc-4",
@@ -59,7 +62,8 @@ const MOCK_DOCTORS: Doctor[] = [
     experience: "8 Yrs Exp",
     rating: 4.7,
     reviewsCount: 76,
-    avatar: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80",
+    avatar:
+      "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80",
   },
   {
     id: "doc-5",
@@ -69,7 +73,8 @@ const MOCK_DOCTORS: Doctor[] = [
     experience: "11 Yrs Exp",
     rating: 4.8,
     reviewsCount: 142,
-    avatar: "https://images.unsplash.com/photo-1651008376811-b90baee60c1f?w=150&auto=format&fit=crop&q=80",
+    avatar:
+      "https://images.unsplash.com/photo-1651008376811-b90baee60c1f?w=150&auto=format&fit=crop&q=80",
   },
   {
     id: "doc-6",
@@ -79,7 +84,8 @@ const MOCK_DOCTORS: Doctor[] = [
     experience: "14 Yrs Exp",
     rating: 4.6,
     reviewsCount: 189,
-    avatar: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=150&auto=format&fit=crop&q=80",
+    avatar:
+      "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=150&auto=format&fit=crop&q=80",
   },
 ];
 
@@ -90,7 +96,6 @@ export default function DoctorDirectoryPage() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
   const [specialtiesLoading, setSpecialtiesLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [useMock, setUseMock] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
@@ -102,9 +107,11 @@ export default function DoctorDirectoryPage() {
         setSpecialtiesLoading(true);
         const res = await api.get("/api/specialties");
         const data = res.data?.data || res.data || [];
-        setSpecialties(Array.isArray(data) && data.length > 0 ? data : MOCK_SPECIALTIES);
+        setSpecialties(
+          Array.isArray(data) && data.length > 0 ? data : MOCK_SPECIALTIES
+        );
         setUseMock(false);
-      } catch (err) {
+      } catch {
         console.warn("Specialties API not available, using mock data");
         setSpecialties(MOCK_SPECIALTIES);
         setUseMock(true);
@@ -121,7 +128,6 @@ export default function DoctorDirectoryPage() {
     const fetchDoctors = async () => {
       try {
         setLoading(true);
-        setError(null);
 
         // Try real API first
         if (!useMock) {
@@ -131,7 +137,7 @@ export default function DoctorDirectoryPage() {
 
           const res = await api.get("/api/doctors", { params });
           const data = res.data?.data || res.data || [];
-          
+
           if (Array.isArray(data) && data.length > 0) {
             setDoctors(data);
             setLoading(false);
@@ -152,15 +158,16 @@ export default function DoctorDirectoryPage() {
         }
 
         if (selectedSpecialty) {
-          filtered = filtered.filter((d) => d.specialtyId === selectedSpecialty);
+          filtered = filtered.filter(
+            (d) => d.specialtyId === selectedSpecialty
+          );
         }
 
         setDoctors(filtered);
-      } catch (err) {
+      } catch {
         console.warn("Doctors API not available, using mock data");
         setUseMock(true);
 
-        // Apply filters on mock data
         let filtered = [...MOCK_DOCTORS];
 
         if (debouncedSearch.trim()) {
@@ -173,7 +180,9 @@ export default function DoctorDirectoryPage() {
         }
 
         if (selectedSpecialty) {
-          filtered = filtered.filter((d) => d.specialtyId === selectedSpecialty);
+          filtered = filtered.filter(
+            (d) => d.specialtyId === selectedSpecialty
+          );
         }
 
         setDoctors(filtered);
@@ -229,7 +238,7 @@ export default function DoctorDirectoryPage() {
                 value={selectedSpecialty}
                 onChange={(e) => setSelectedSpecialty(e.target.value)}
                 disabled={specialtiesLoading}
-                className="bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[180px]"
+                className="bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-45"
               >
                 <option value="">All Specialties</option>
                 {specialties.map((spec) => (
