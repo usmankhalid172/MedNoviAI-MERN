@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Nunito } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/context/AuthContext";
 
 // Nunito font import kar rahe hain (Modern aur Rounded)
 const nunito = Nunito({
