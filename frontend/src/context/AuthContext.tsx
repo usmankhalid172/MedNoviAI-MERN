@@ -34,10 +34,27 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   useEffect(() => {
     const token = getToken();
+    Promise.resolve().then(() => {
+      if (!token) {
+        setIsLoggedIn(false);
+        return;
+      }
 
-    if (token) {
       setIsLoggedIn(true);
-    }
+
+      try {
+        const raw = token.includes(".") ? token.split(".")[1] : token;
+        const payload = JSON.parse(atob(raw));
+        setUser({
+          id: payload.sub || payload.id || payload.userId,
+          name: payload.name,
+          email: payload.email,
+          role: payload.role,
+        });
+      } catch {
+        // Token exists but is not decodable — session flag stays, user is null.
+      }
+    });
   }, []);
 
   const logout = () => {

@@ -159,7 +159,6 @@ export default function DoctorDirectoryPage() {
   const handleRetryDoctors = () => {
     setDoctorsError(false);
     setLoading(true);
-    // Force re-fetch by updating a dependency
     setSelectedSpecialty((prev) => prev);
   };
 
