@@ -17,6 +17,8 @@ interface AuthContextType {
   logout: () => void;
 }
 
+const USER_KEY = "mednoviai-user";
+
 export const AuthContext = createContext<AuthContextType>({
   isLoggedIn: false,
   user: null,
@@ -34,31 +36,46 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   useEffect(() => {
     const token = getToken();
-    Promise.resolve().then(() => {
-      if (!token) {
-        setIsLoggedIn(false);
-        return;
-      }
 
-      setIsLoggedIn(true);
+    if (!token) {
+      setIsLoggedIn(false);
+      return;
+    }
 
+    setIsLoggedIn(true);
+
+    const savedUser = localStorage.getItem(USER_KEY);
+
+    if (savedUser) {
       try {
-        const raw = token.includes(".") ? token.split(".")[1] : token;
-        const payload = JSON.parse(atob(raw));
-        setUser({
-          id: payload.sub || payload.id || payload.userId,
-          name: payload.name,
-          email: payload.email,
-          role: payload.role,
-        });
+        setUser(JSON.parse(savedUser));
+        return;
       } catch {
-        // Token exists but is not decodable — session flag stays, user is null.
+        localStorage.removeItem(USER_KEY);
       }
-    });
+    }
+
+    // Fallback: get user information from JWT token
+    try {
+      const raw = token.includes(".") ? token.split(".")[1] : token;
+
+      const payload = JSON.parse(atob(raw));
+
+      setUser({
+        id: payload.sub || payload.id || payload.userId,
+        name: payload.name,
+        email: payload.email,
+        role: payload.role,
+      });
+    } catch {
+      // Token exists but is not decodable.
+      // User remains logged in, but user details are unavailable.
+    }
   }, []);
 
   const logout = () => {
     removeToken();
+    localStorage.removeItem(USER_KEY);
     setIsLoggedIn(false);
     setUser(null);
   };
@@ -66,6 +83,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const login = (nextUser: User) => {
     setIsLoggedIn(true);
     setUser(nextUser);
+    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
   };
 
   return (
