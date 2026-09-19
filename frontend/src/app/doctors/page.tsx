@@ -1,219 +1,243 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/shared/Navbar";
-import { EmptyState } from "@/components/shared/EmptyState";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import api from "@/lib/api";
-import { Search, Loader2 } from "lucide-react";
+import DoctorCard from "@/components/doctors/DoctorCard";
+import DoctorSkeleton from "@/components/doctors/DoctorSkeleton";
+import EmptyDoctors from "@/components/doctors/EmptyDoctors";
+import { useDebounce } from "@/hooks/useDebounce";
+import { supabase } from "@/lib/supabase";
+import { Doctor, Specialty } from "@/types/doctor";
+import { Search, RefreshCw } from "lucide-react";
 
-interface Doctor {
+type DoctorRow = {
   id: string;
-  name: string;
-  specialty: string;
-  experience: string;
-  rating: number;
-  reviewsCount: number;
-  location: string;
-  availableSlot: string;
-  avatar: string;
-  consultationFee: string;
-}
+  full_name: string;
+  experience_years: number | null;
+  rating: number | null;
+  reviews_count: number | null;
+  avatar_url: string | null;
+  consultation_fee: number | null;
+  specialty_id: string;
+  specialties: { name: string } | { name: string }[] | null;
+};
 
-function DoctorCardSkeleton() {
-  return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 p-6 flex flex-col justify-between space-y-4">
-      <div className="flex items-start gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-slate-200 animate-pulse shrink-0" />
-        <div className="flex-1 space-y-2">
-          <div className="h-4 w-2/3 rounded bg-slate-200 animate-pulse" />
-          <div className="h-3 w-1/3 rounded bg-slate-200 animate-pulse" />
-          <div className="h-3 w-1/2 rounded bg-slate-100 animate-pulse" />
-        </div>
-      </div>
-      <div className="flex gap-2 pt-2">
-        <div className="flex-1 h-10 rounded-xl bg-slate-200 animate-pulse" />
-        <div className="flex-1 h-10 rounded-xl bg-slate-200 animate-pulse" />
-      </div>
-    </div>
-  );
+function getSpecialtyName(row: DoctorRow): string {
+  const rel = row.specialties;
+  if (!rel) return "General";
+  if (Array.isArray(rel)) return rel[0]?.name ?? "General";
+  return rel.name ?? "General";
 }
 
 export default function DoctorDirectoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
+  const [selectedSpecialty, setSelectedSpecialty] = useState("");
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searching, setSearching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
+  const [loading, setLoading] = useState(true);
+  const [specialtiesLoading, setSpecialtiesLoading] = useState(true);
+  const [doctorsError, setDoctorsError] = useState(false);
+  const [specialtiesError, setSpecialtiesError] = useState(false);
+
+  const debouncedSearch = useDebounce(searchQuery, 300);
+
+  // Load specialties
   useEffect(() => {
-    let cancelled = false;
-    async function fetchDoctors() {
+    let isMounted = true;
+
+    const loadSpecialties = async () => {
       try {
-        setLoading(true);
-        setError(null);
-        const res = await api.get("/doctors");
-        if (!cancelled) {
-          const data = res.data?.doctors || res.data?.data || res.data;
-          const list = Array.isArray(data) ? data : [];
-          setAllDoctors(list);
-          setDoctors(list);
+        setSpecialtiesLoading(true);
+        setSpecialtiesError(false);
+
+        const { data, error } = await supabase
+          .from("specialties")
+          .select("id, name")
+          .order("name");
+
+        if (error) throw error;
+        if (isMounted) setSpecialties(data ?? []);
+      } catch (error) {
+        console.error("Error fetching specialties:", error);
+        if (isMounted) {
+          setSpecialties([]);
+          setSpecialtiesError(true);
         }
-      } catch {
-        if (!cancelled) setError("Unable to load doctor directory. Please try again later.");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (isMounted) setSpecialtiesLoading(false);
       }
-    }
-    fetchDoctors();
-    return () => { cancelled = true; };
+    };
+
+    loadSpecialties();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
+  // Load doctors
   useEffect(() => {
-    if (loading) return;
+    let isMounted = true;
 
-    const query = searchQuery.trim();
-    let cancelled = false;
-
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      if (!query) {
-        setSearching(false);
-        setDoctors(allDoctors);
-        return;
-      }
-      setSearching(true);
-      setError(null);
-    });
-
-    if (!query) {
-      return () => { cancelled = true; };
-    }
-
-    const timer = setTimeout(async () => {
+    const loadDoctors = async () => {
       try {
-        const res = await api.get("/doctors", { params: { search: query } });
-        if (!cancelled) {
-          const data = res.data?.doctors || res.data?.data || res.data;
-          setDoctors(Array.isArray(data) ? data : []);
-        }
-      } catch {
-        if (!cancelled) setError("Unable to complete your search. Please try again.");
-      } finally {
-        if (!cancelled) setSearching(false);
-      }
-    }, 400);
+        setLoading(true);
+        setDoctorsError(false);
 
-    return () => { clearTimeout(timer); cancelled = true; };
-  }, [searchQuery, loading, allDoctors]);
+        let query = supabase
+          .from("doctors")
+          .select(
+            `
+            id,
+            full_name,
+            experience_years,
+            rating,
+            reviews_count,
+            avatar_url,
+            consultation_fee,
+            specialty_id,
+            specialties ( name )
+          `
+          )
+          .eq("is_available", true);
+
+        if (selectedSpecialty) {
+          query = query.eq("specialty_id", selectedSpecialty);
+        }
+
+        if (debouncedSearch.trim()) {
+          query = query.ilike("full_name", `%${debouncedSearch.trim()}%`);
+        }
+
+        const { data, error } = await query.order("rating", {
+          ascending: false,
+        });
+
+        if (error) throw error;
+
+        const rows = (data ?? []) as unknown as DoctorRow[];
+
+        const formattedDoctors: Doctor[] = rows.map((doc) => ({
+          id: doc.id,
+          name: doc.full_name,
+          specialty: getSpecialtyName(doc),
+          specialtyId: doc.specialty_id,
+          experience: `${doc.experience_years ?? 0} Yrs Exp`,
+          rating: Number(doc.rating) || 0,
+          reviewsCount: Number(doc.reviews_count) || 0,
+          avatar: doc.avatar_url || "https://via.placeholder.com/150",
+          consultationFee: doc.consultation_fee
+            ? `$${doc.consultation_fee}`
+            : undefined,
+        }));
+
+        if (isMounted) setDoctors(formattedDoctors);
+      } catch (error) {
+        console.error("Error fetching doctors:", error);
+        if (isMounted) {
+          setDoctors([]);
+          setDoctorsError(true);
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadDoctors();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [debouncedSearch, selectedSpecialty]);
+
+  const handleClearFilters = () => {
+    setSearchQuery("");
+    setSelectedSpecialty("");
+  };
+
+  const handleRetryDoctors = () => {
+    setDoctorsError(false);
+    setLoading(true);
+    setSelectedSpecialty((prev) => prev);
+  };
 
   return (
     <>
       <Navbar />
       <div className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-6xl mx-auto space-y-8">
-          <div className="flex items-center justify-between gap-3">
-            <Link href="/patient/dashboard" aria-label="Back to home page"
-              className="inline-flex items-center rounded-lg border border-slate-200 bg-blue-500 px-3 py-2 
-              text-xs font-semibold transition text-white hover:bg-blue-700">
-              &larr; Back To Dashboard
-            </Link>
-          </div>
-
           <div className="space-y-3">
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
               Doctor Directory
             </h1>
             <p className="text-sm text-slate-500 max-w-xl">
-              Browse top-rated healthcare specialists and book consultations instantly.
+              Browse top-rated healthcare specialists and book consultations
+              instantly.
             </p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search doctors by name or specialty..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                disabled={loading}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl pl-10 pr-10 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
-              />
-              {searching && (
-                <Loader2 className="absolute right-3.5 top-1/2 size-4 -translate-y-1/2 animate-spin text-blue-600" />
-              )}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search doctors by name or specialty..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <select
+                value={selectedSpecialty}
+                onChange={(e) => setSelectedSpecialty(e.target.value)}
+                disabled={specialtiesLoading || specialtiesError}
+                className="bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-45"
+              >
+                <option value="">All Specialties</option>
+                {specialties.map((spec) => (
+                  <option key={spec.id} value={spec.id}>
+                    {spec.name}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {specialtiesError && (
+              <p className="text-xs text-red-500 mt-2">
+                Failed to load specialties
+              </p>
+            )}
           </div>
 
-          {loading ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-center gap-2 text-sm font-medium text-blue-600">
-                <Loader2 className="size-4 animate-spin" /> Loading doctors...
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {loading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <DoctorSkeleton key={i} />
+              ))
+            ) : doctorsError ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-16 text-center space-y-4">
+                <p className="text-slate-600 font-medium">
+                  Failed to load doctors
+                </p>
+                <button
+                  onClick={handleRetryDoctors}
+                  className="flex items-center gap-2 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-blue-700 transition"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Retry
+                </button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <DoctorCardSkeleton key={i} />
-                ))}
-              </div>
-            </div>
-          ) : searching ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-center gap-2 text-sm font-medium text-blue-600">
-                <Loader2 className="size-4 animate-spin" /> Searching doctors for &quot;{searchQuery}&quot;...
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <DoctorCardSkeleton key={i} />
-                ))}
-              </div>
-            </div>
-          ) : error ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800">Something went wrong</h2>
-              <p className="mt-2 text-sm text-slate-500">{error}</p>
-            </div>
-          ) : doctors.length === 0 ? (
-            <EmptyState
-              title="No doctors found"
-              message={searchQuery
-                ? "Try a different name or specialty to explore available care options."
-                : "No doctors are available at the moment. Please check back later."}
-            />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {doctors.map((doc) => (
-                <div key={doc.id} className="bg-white rounded-2xl border border-slate-200/80 p-6 flex flex-col justify-between space-y-4">
-                  <div className="flex items-start gap-4">
-                    <img src={doc.avatar} alt={doc.name} className="w-16 h-16 rounded-2xl object-cover" />
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">{doc.name}</h3>
-                      <p className="text-xs font-semibold text-blue-600">{doc.specialty}</p>
-                      <p className="text-xs text-slate-400">{doc.experience}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                    <Link
-                      href={`/doctors/${doc.id}`}
-                      className={cn(buttonVariants({ variant: "secondary", className: "flex-1 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs" }))}
-                    >
-                      View Profile
-                    </Link>
-                    <Link
-                      href={`/appointment/book?doctor=${encodeURIComponent(doc.name)}&specialty=${encodeURIComponent(doc.specialty)}`}
-                      className={cn(buttonVariants({ variant: "default", className: "flex-1 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs" }))}
-                    >
-                      Book Visit
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+            ) : doctors.length === 0 ? (
+              <EmptyDoctors onClearFilters={handleClearFilters} />
+            ) : (
+              doctors.map((doctor) => (
+                <DoctorCard key={doctor.id} doctor={doctor} />
+              ))
+            )}
+          </div>
         </div>
       </div>
     </>
