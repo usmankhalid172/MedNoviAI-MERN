@@ -17,6 +17,8 @@ interface AuthContextType {
   logout: () => void;
 }
 
+const USER_KEY = "mednoviai-user";
+
 export const AuthContext = createContext<AuthContextType>({
   isLoggedIn: false,
   user: null,
@@ -34,14 +36,24 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   useEffect(() => {
     const token = getToken();
+    const savedUser = localStorage.getItem(USER_KEY);
 
     if (token) {
       setIsLoggedIn(true);
+    }
+
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch {
+        localStorage.removeItem(USER_KEY);
+      }
     }
   }, []);
 
   const logout = () => {
     removeToken();
+    localStorage.removeItem(USER_KEY);
     setIsLoggedIn(false);
     setUser(null);
   };
@@ -49,6 +61,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const login = (nextUser: User) => {
     setIsLoggedIn(true);
     setUser(nextUser);
+    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
   };
 
   return (
