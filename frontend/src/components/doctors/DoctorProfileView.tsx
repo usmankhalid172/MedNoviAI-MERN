@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import PageLayout from "@/components/shared/PageLayout";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -16,17 +17,19 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Star,
   MapPin,
-  Calendar,
   Clock,
   GraduationCap,
   Briefcase,
   ThumbsUp,
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   CalendarCheck,
   MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import api from "@/lib/api";
 
 /* ------------------------------ Types ------------------------------ */
 
@@ -53,91 +56,7 @@ interface Review {
   comment: string;
 }
 
-interface DaySlot {
-  date: Date;
-  slots: string[];
-}
-
-/* --------------------------- Mock data ---------------------------- */
-
-const mockDoctor: Doctor = {
-  id: "1",
-  name: "Dr. Sarah Ahmed",
-  specialty: "Cardiologist",
-  rating: 4.8,
-  reviewCount: 324,
-  experience: 12,
-  fee: 3000,
-  location: "Shifa International Hospital, Islamabad",
-  about:
-    "Dr. Sarah Ahmed is a board-certified cardiologist with over 12 years of experience in diagnosing and treating cardiovascular diseases. She specializes in interventional cardiology, heart failure management, and preventive cardiology. She is dedicated to providing patient-centered care with the latest evidence-based treatments.",
-  education: [
-    "MBBS — King Edward Medical University, Lahore",
-    "FCPS (Cardiology) — Aga Khan University, Karachi",
-    "Fellowship in Interventional Cardiology — UK",
-  ],
-  certifications: [
-    "Pakistan Medical & Dental Council (PMDC)",
-    "European Society of Cardiology (ESC)",
-  ],
-};
-
-const featuredDoctors: Doctor[] = [
-  mockDoctor,
-  {
-    ...mockDoctor,
-    id: "2",
-    name: "Dr. Hamza Khan",
-    specialty: "General Physician",
-    rating: 4.8,
-    reviewCount: 218,
-    experience: 9,
-    fee: 2200,
-    about: "Dr. Hamza Khan provides thoughtful first consultations for common symptoms and everyday health concerns. He focuses on clear explanations, practical guidance, and patient-centered care.",
-    education: ["MBBS — Aga Khan University, Karachi", "FCPS (Medicine) — CPSP Pakistan"],
-    certifications: ["Pakistan Medical & Dental Council (PMDC)", "Primary Care Medicine Certification"],
-  },
-  {
-    ...mockDoctor,
-    id: "3",
-    name: "Dr. Ayesha Malik",
-    specialty: "Dermatologist",
-    rating: 4.9,
-    reviewCount: 286,
-    experience: 10,
-    fee: 2500,
-    about: "Dr. Ayesha Malik offers practical, evidence-based guidance for skin health, treatment options, and long-term care routines.",
-    education: ["MBBS — University of Lahore", "FCPS (Dermatology) — CPSP Pakistan"],
-    certifications: ["Pakistan Medical & Dental Council (PMDC)", "American Academy of Dermatology Member"],
-  },
-];
-
-const mockReviews: Review[] = [
-  {
-    id: "r1",
-    patientName: "Ali Raza",
-    rating: 5,
-    date: "2 weeks ago",
-    comment:
-      "Excellent doctor. They explained everything clearly and made me feel comfortable. Highly recommended!",
-  },
-  {
-    id: "r2",
-    patientName: "Fatima Khan",
-    rating: 5,
-    date: "1 month ago",
-    comment:
-      "Very professional and caring. The treatment plan was explained clearly and worked really well for my condition.",
-  },
-  {
-    id: "r3",
-    patientName: "Bilal Hussain",
-    rating: 4,
-    date: "2 months ago",
-    comment:
-      "Good experience overall, waiting time was a bit long but the consultation was worth it.",
-  },
-];
+/* ----------------------------- Constants ---------------------------- */
 
 const faqs = [
   {
@@ -153,7 +72,7 @@ const faqs = [
   {
     question: "What is the consultation fee?",
     answer:
-      "The consultation fee is PKR 3,000. Follow-up visits within 14 days are free of charge.",
+      "The consultation fee is displayed on the doctor's profile. Follow-up visits within 14 days are free of charge.",
   },
   {
     question: "Does this doctor offer online consultations?",
@@ -162,42 +81,15 @@ const faqs = [
   },
 ];
 
-/* --------------------------- Helpers ------------------------------ */
-
 const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-const allTimeSlots = [
-  "09:00 AM",
-  "09:30 AM",
-  "10:00 AM",
-  "10:30 AM",
-  "11:00 AM",
-  "11:30 AM",
-  "02:00 PM",
-  "02:30 PM",
-  "03:00 PM",
-  "03:30 PM",
-  "04:00 PM",
-  "04:30 PM",
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ];
 
 function buildMonth(year: number, month: number) {
   const first = new Date(year, month, 1);
-  const startDay = (first.getDay() + 6) % 7; // Monday-first
+  const startDay = (first.getDay() + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (Date | null)[] = [];
   for (let i = 0; i < startDay; i++) cells.push(null);
@@ -215,13 +107,7 @@ function sameDay(a: Date, b: Date) {
 
 /* --------------------------- Sub-components ------------------------ */
 
-function StarRating({
-  rating,
-  className,
-}: {
-  rating: number;
-  className?: string;
-}) {
+function StarRating({ rating, className }: { rating: number; className?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-1", className)}>
       {[1, 2, 3, 4, 5].map((i) => (
@@ -239,16 +125,56 @@ function StarRating({
   );
 }
 
+function ProfileSkeleton() {
+  return (
+    <PageLayout>
+      <div className="doctor-profile-page mx-auto max-w-5xl min-w-0 space-y-8 rounded-3xl px-4 py-6 sm:px-5 md:py-8">
+        <Card className="border-0 shadow-lg">
+          <CardContent className="p-6 md:p-8">
+            <div className="flex flex-col items-start gap-6 md:flex-row md:items-start">
+              <div className="size-32 md:size-40 rounded-full bg-[#1e4f8d] animate-pulse shrink-0 border-4 border-[#3769a4]" />
+              <div className="flex-1 space-y-4">
+                <div className="space-y-2">
+                  <div className="h-8 w-48 rounded bg-[#1e4f8d] animate-pulse" />
+                  <div className="h-5 w-24 rounded bg-[#1e4f8d] animate-pulse" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="h-4 w-36 rounded bg-[#1e4f8d] animate-pulse" />
+                  <div className="h-4 w-28 rounded bg-[#1e4f8d] animate-pulse" />
+                  <div className="h-4 w-48 rounded bg-[#1e4f8d] animate-pulse" />
+                  <div className="h-4 w-32 rounded bg-[#1e4f8d] animate-pulse" />
+                </div>
+              </div>
+              <div className="w-full md:w-auto space-y-2">
+                <div className="h-11 w-full md:w-48 rounded-xl bg-[#1e4f8d] animate-pulse" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-32 rounded-xl bg-[#163e76] animate-pulse border border-[#3769a4]" />
+          ))}
+        </div>
+      </div>
+    </PageLayout>
+  );
+}
+
 function CalendarWithSlots({
   selectedDate,
   onSelectDate,
   selectedSlot,
   onSelectSlot,
+  slots,
+  slotsLoading,
 }: {
   selectedDate: Date;
   onSelectDate: (d: Date) => void;
   selectedSlot: string | null;
   onSelectSlot: (s: string | null) => void;
+  slots: string[];
+  slotsLoading: boolean;
 }) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -258,12 +184,6 @@ function CalendarWithSlots({
     () => buildMonth(viewYear, viewMonth),
     [viewYear, viewMonth],
   );
-
-  const bookedSlots = useMemo(() => {
-    // deterministic pseudo-booked slots per day
-    const seed = selectedDate.getDate() + selectedDate.getMonth() * 31;
-    return new Set(allTimeSlots.filter((_, i) => (seed * (i + 3)) % 7 === 0));
-  }, [selectedDate]);
 
   const prevMonth = () => {
     const m = viewMonth === 0 ? 11 : viewMonth - 1;
@@ -278,31 +198,20 @@ function CalendarWithSlots({
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      {/* Calendar */}
       <Card>
         <CardContent className="p-4">
           <div className="mb-3 flex items-center justify-between">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={prevMonth}
-              aria-label="Previous month"
-            >
+            <Button variant="ghost" size="icon" onClick={prevMonth} aria-label="Previous month">
               <ChevronLeft className="size-4" />
             </Button>
             <span className="text-sm font-semibold">
               {MONTHS[viewMonth]} {viewYear}
             </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={nextMonth}
-              aria-label="Next month"
-            >
+            <Button variant="ghost" size="icon" onClick={nextMonth} aria-label="Next month">
               <ChevronRight className="size-4" />
             </Button>
           </div>
-          <div className="mb-1 grid-cols-7 text-center text-xs font-medium text-muted-foreground">
+          <div className="mb-1 grid grid-cols-7 text-center text-xs font-medium text-muted-foreground">
             {WEEK_DAYS.map((d) => (
               <span key={d}>{d}</span>
             ))}
@@ -310,13 +219,7 @@ function CalendarWithSlots({
           <div className="grid grid-cols-7 gap-1">
             {cells.map((date, i) => {
               if (!date) return <span key={`empty-${i}`} />;
-              const isPast =
-                date <
-                new Date(
-                  today.getFullYear(),
-                  today.getMonth(),
-                  today.getDate(),
-                );
+              const isPast = date < new Date(today.getFullYear(), today.getMonth(), today.getDate());
               const isSelected = sameDay(date, selectedDate);
               return (
                 <button
@@ -341,46 +244,45 @@ function CalendarWithSlots({
         </CardContent>
       </Card>
 
-      {/* Slots */}
       <Card>
         <CardContent className="p-4">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
             <Clock className="size-4 text-primary" />
             Available Slots —{" "}
-            {selectedDate.toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "short",
-              day: "numeric",
-            })}
+            {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
           </h3>
           <div className="grid grid-cols-3 gap-2">
-            {allTimeSlots.map((slot) => {
-              const isBooked = bookedSlots.has(slot);
-              const isSelected = selectedSlot === slot;
-              return (
-                <button
-                  key={slot}
-                  type="button"
-                  disabled={isBooked}
-                  onClick={() => onSelectSlot(slot)}
-                  className={cn(
-                    "rounded-md border px-2 py-2 text-xs font-medium transition-colors",
-                    isBooked
-                      ? "border-dashed text-muted-foreground/40 line-through cursor-not-allowed"
-                      : isSelected
+            {slotsLoading ? (
+              [1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="h-9 rounded-md bg-muted animate-pulse" />
+              ))
+            ) : slots.length === 0 ? (
+              <p className="col-span-3 text-xs text-muted-foreground">
+                No available slots for the selected date.
+              </p>
+            ) : (
+              slots.map((slot) => {
+                const isSelected = selectedSlot === slot;
+                return (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => onSelectSlot(slot)}
+                    className={cn(
+                      "rounded-md border px-2 py-2 text-xs font-medium transition-colors",
+                      isSelected
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border hover:border-primary hover:text-primary",
-                  )}
-                >
-                  {slot}
-                </button>
-              );
-            })}
+                    )}
+                  >
+                    {slot}
+                  </button>
+                );
+              })
+            )}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            {selectedSlot
-              ? `Selected: ${selectedSlot}`
-              : "Select a time slot to book your appointment."}
+            {selectedSlot ? `Selected: ${selectedSlot}` : "Select a time slot to book your appointment."}
           </p>
         </CardContent>
       </Card>
@@ -391,10 +293,116 @@ function CalendarWithSlots({
 /* --------------------------- Main view ----------------------------- */
 
 export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
-  const doctor = featuredDoctors.find((profile) => profile.id === doctorId) ?? mockDoctor;
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [availability, setAvailability] = useState<string[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchDoctor() {
+      try {
+        setLoading(true);
+        const res = await api.get(`/doctors/${doctorId}`);
+        if (!cancelled) {
+          const data = res.data?.doctor || res.data?.data || res.data;
+          if (data && data.id) {
+            setDoctor(data);
+          } else {
+            setNotFound(true);
+          }
+        }
+      } catch {
+        if (!cancelled) setNotFound(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    async function fetchReviews() {
+      try {
+        const res = await api.get(`/doctors/${doctorId}/reviews`);
+        const data = res.data?.reviews || res.data?.data || res.data;
+        if (!cancelled && Array.isArray(data)) {
+          setReviews(data);
+        }
+      } catch {
+        // Reviews endpoint may not exist yet — acceptable
+      }
+    }
+
+    fetchDoctor();
+    fetchReviews();
+    return () => { cancelled = true; };
+  }, [doctorId]);
+
+  useEffect(() => {
+    if (!doctorId || !doctor) return;
+
+    let cancelled = false;
+
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setSlotsLoading(true);
+      setAvailability([]);
+    });
+
+    api
+      .get(`/doctors/${doctorId}/availability`, {
+        params: { date: selectedDate.toISOString().split("T")[0] },
+      })
+      .then((res) => {
+        const data = res.data?.slots || res.data?.availability || res.data?.data || res.data;
+        if (!cancelled && Array.isArray(data)) {
+          setAvailability(
+            data
+              .map((slot: string | { time: string }) =>
+                typeof slot === "string" ? slot : slot?.time
+              )
+              .filter(Boolean)
+          );
+        } else if (!cancelled) {
+          setAvailability([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAvailability([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [doctorId, doctor, selectedDate]);
+
+  if (loading) return <ProfileSkeleton />;
+
+  if (notFound || !doctor) {
+    return (
+      <PageLayout>
+        <div className="mx-auto flex max-w-xl flex-col items-center justify-center gap-5 rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center shadow-sm">
+          <div className="flex size-16 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+            <CalendarCheck className="size-7" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold text-slate-900">Doctor profile not found</h1>
+            <p className="text-sm leading-6 text-slate-600">
+              We could not find the doctor you are looking for. Try browsing the directory again or choose a different specialist.
+            </p>
+          </div>
+          <Link href="/doctors" className={cn(buttonVariants({ variant: "default", className: "bg-blue-600 hover:bg-blue-700 text-white" }))}>
+            Browse doctors
+          </Link>
+        </div>
+      </PageLayout>
+    );
+  }
 
   const initials = doctor.name
     .replace("Dr. ", "")
@@ -407,45 +415,64 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
   const handleBook = async () => {
     if (!selectedSlot) return;
     setBooking(true);
-    // TODO: wire to backend — POST /api/appointments
-    setTimeout(() => {
+    try {
+      await api.post("/appointments", {
+        doctorId,
+        doctorName: doctor.name,
+        specialty: doctor.specialty,
+        date: selectedDate.toISOString().split("T")[0],
+        time: selectedSlot,
+        location: "MedNovi Medical Center, Suite 402",
+      });
+      toast.success("Appointment confirmed", {
+        description: `${doctor.name} on ${selectedDate.toDateString()} at ${selectedSlot}.`,
+      });
+    } catch {
+      toast.error("Booking failed", {
+        description: "We could not submit your appointment. Please try again.",
+      });
+    } finally {
       setBooking(false);
-      alert(
-        `Appointment booked with ${doctor.name} on ${selectedDate.toDateString()} at ${selectedSlot}`,
-      );
-    }, 800);
+    }
   };
 
   return (
     <PageLayout>
-      <div className="doctor-profile-page mx-auto max-w-5xl space-y-8 rounded-3xl px-3 py-6 sm:px-5 md:py-8">
+      <div className="doctor-profile-page mx-auto max-w-5xl min-w-0 space-y-8 rounded-3xl px-4 py-6 sm:px-5 md:py-8">
+        <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-xs">
+          <Link href="/" className="font-semibold text-[#dbeafe] transition-opacity hover:opacity-80">Home</Link>
+          <ChevronRight className="size-3.5 text-[#93c5fd]" />
+          <Link href="/doctors" className="font-semibold text-[#dbeafe] transition-opacity hover:opacity-80">Doctors</Link>
+          <ChevronRight className="size-3.5 text-[#93c5fd]" />
+          <span className="font-semibold text-[#93c5fd]">{doctor.name}</span>
+        </nav>
+
+        <Link href="/doctors"
+          className={cn(buttonVariants({ variant: "outline", className: "gap-2 text-white" }))}
+        >
+          <ArrowLeft className="size-4" />
+          Back to Doctors
+        </Link>
+
         {/* ---------- Hero / Profile card ---------- */}
         <Card className="border-0 shadow-lg">
           <CardContent className="p-6 md:p-8">
             <div className="flex flex-col items-start gap-6 md:flex-row md:items-start">
               <div className="shrink-0">
                 <Avatar className="size-32 md:size-40 border-4 border-primary/20">
-                  {doctor.image ? (
-                    <AvatarImage src={doctor.image} alt={doctor.name} />
-                  ) : null}
-                  <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary text-4xl font-bold">
+                  {doctor.image ? <AvatarImage src={doctor.image} alt={doctor.name} /> : null}
+                  <AvatarFallback className="bg-linear-to-br from-primary/20 to-primary/10 text-primary text-4xl font-bold">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
               </div>
 
-              <div className="flex-1 space-y-3">
+              <div className="min-w-0 flex-1 space-y-3">
                 <div className="space-y-1">
-                  <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-                    {doctor.name}
-                  </h1>
+                  <h1 className="text-3xl font-bold tracking-tight md:text-4xl">{doctor.name}</h1>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">
-                      {doctor.specialty}
-                    </Badge>
-                    <Badge variant="outline" className="text-xs">
-                      Verified
-                    </Badge>
+                    <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">{doctor.specialty}</Badge>
+                    <Badge variant="outline" className="text-xs">Verified</Badge>
                   </div>
                 </div>
 
@@ -453,26 +480,19 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
                   <div className="flex items-center gap-2">
                     <StarRating rating={doctor.rating} className="scale-110" />
                     <span className="font-bold text-lg">{doctor.rating}</span>
-                    <span className="text-muted-foreground text-sm">
-                      ({doctor.reviewCount} reviews)
-                    </span>
+                    <span className="text-muted-foreground text-sm">({doctor.reviewCount} reviews)</span>
                   </div>
-                  
                   <div className="flex items-center gap-2 text-sm">
                     <Briefcase className="size-4 text-primary" />
                     <span className="font-medium">{doctor.experience} years</span>
                     <span className="text-muted-foreground">experience</span>
                   </div>
-
                   <div className="flex items-center gap-2 text-sm">
                     <MapPin className="size-4 text-primary" />
                     <span className="text-muted-foreground">{doctor.location}</span>
                   </div>
-
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="font-medium text-primary">
-                      PKR {doctor.fee.toLocaleString()}
-                    </span>
+                    <span className="font-medium text-primary">PKR {doctor.fee.toLocaleString()}</span>
                     <span className="text-muted-foreground">per consultation</span>
                   </div>
                 </div>
@@ -486,15 +506,9 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
                   disabled={!selectedSlot || booking}
                 >
                   <CalendarCheck className="size-5 mr-2" />
-                  {booking
-                    ? "Booking..."
-                    : selectedSlot
-                      ? "Book Appointment"
-                      : "Select a Slot First"}
+                  {booking ? "Booking..." : selectedSlot ? "Book Appointment" : "Select a Slot First"}
                 </Button>
-                <p className="text-xs text-muted-foreground text-center mt-2">
-                  Click to book your appointment
-                </p>
+                <p className="text-xs text-muted-foreground text-center mt-2">Click to book your appointment</p>
               </div>
             </div>
           </CardContent>
@@ -503,9 +517,9 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
         {/* ---------- Tabs ---------- */}
         <Tabs defaultValue="about" className="w-full">
           <TabsList className="grid w-full grid-cols-3 mb-6 h-12">
-            <TabsTrigger value="about" className="text-base">About</TabsTrigger>
-            <TabsTrigger value="availability" className="text-base">Availability</TabsTrigger>
-            <TabsTrigger value="reviews" className="text-base">Reviews</TabsTrigger>
+            <TabsTrigger value="about" className="text-sm md:text-base">About</TabsTrigger>
+            <TabsTrigger value="availability" className="text-sm md:text-base">Availability</TabsTrigger>
+            <TabsTrigger value="reviews" className="text-sm md:text-base">Reviews</TabsTrigger>
           </TabsList>
 
           {/* About */}
@@ -514,9 +528,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
               <CardContent className="p-6 space-y-4">
                 <div>
                   <h2 className="text-xl font-bold mb-3">About the Doctor</h2>
-                  <p className="text-base leading-relaxed text-muted-foreground">
-                    {doctor.about}
-                  </p>
+                  <p className="text-base leading-relaxed text-muted-foreground">{doctor.about}</p>
                 </div>
               </CardContent>
             </Card>
@@ -525,9 +537,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
               <Card className="border-0 shadow-sm">
                 <CardContent className="p-6 space-y-4">
                   <h3 className="flex items-center gap-3 text-lg font-bold">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <GraduationCap className="size-5 text-blue-600" />
-                    </div>
+                    <div className="p-2 bg-blue-100 rounded-lg"><GraduationCap className="size-5 text-blue-600" /></div>
                     Education
                   </h3>
                   <ul className="space-y-3">
@@ -544,9 +554,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
               <Card className="border-0 shadow-sm">
                 <CardContent className="p-6 space-y-4">
                   <h3 className="flex items-center gap-3 text-lg font-bold">
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <Briefcase className="size-5 text-green-600" />
-                    </div>
+                    <div className="p-2 bg-green-100 rounded-lg"><Briefcase className="size-5 text-green-600" /></div>
                     Certifications
                   </h3>
                   <ul className="space-y-3">
@@ -566,37 +574,32 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
           <TabsContent value="availability" className="mt-6">
             <CalendarWithSlots
               selectedDate={selectedDate}
-              onSelectDate={(d) => {
-                setSelectedDate(d);
-                setSelectedSlot(null);
-              }}
+              onSelectDate={(d) => { setSelectedDate(d); setSelectedSlot(null); }}
               selectedSlot={selectedSlot}
               onSelectSlot={setSelectedSlot}
+              slots={availability}
+              slotsLoading={slotsLoading}
             />
             <div className="mt-6 flex justify-end">
               <Button
                 size="lg"
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
                 onClick={handleBook}
                 disabled={!selectedSlot || booking}
               >
                 <CalendarCheck className="size-4" />
-                {booking
-                  ? "Booking..."
-                  : selectedSlot
-                    ? "Book Appointment"
-                    : "Select a Slot First"}
+                {booking ? "Booking..." : selectedSlot ? "Book Appointment" : "Select a Slot First"}
               </Button>
             </div>
           </TabsContent>
 
           {/* Reviews */}
           <TabsContent value="reviews" className="mt-6 space-y-6">
-            <div className="flex items-center justify-between gap-4 bg-gradient-to-r from-primary/10 to-primary/5 p-4 rounded-lg border border-primary/20">
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-linear-to-r from-primary/10 to-primary/5 p-4 rounded-lg border border-primary/20">
               <div>
                 <h2 className="text-lg font-bold">Patient Reviews</h2>
                 <p className="text-sm text-muted-foreground">
-                  Based on {mockReviews.length} verified patient feedback
+                  Based on {reviews.length || doctor.reviewCount} verified patient feedback
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -610,41 +613,43 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
               </div>
             </div>
 
-            <div className="space-y-4">
-              {mockReviews.map((review) => (
-                <Card key={review.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
-                  <CardContent className="p-5 space-y-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-10">
-                          <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                            {review.patientName
-                              .split(" ")
-                              .map((w) => w[0])
-                              .join("")
-                              .slice(0, 2)
-                              .toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-sm font-semibold">{review.patientName}</p>
-                          <p className="text-xs text-muted-foreground">{review.date}</p>
+            {reviews.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
+                <p className="text-sm font-semibold text-slate-700">No reviews available yet</p>
+                <p className="mt-1 text-xs text-slate-500">Patient reviews will appear here after consultations.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {reviews.map((review) => (
+                  <Card key={review.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                    <CardContent className="p-5 space-y-3">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="size-10">
+                            <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                              {review.patientName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="text-sm font-semibold">{review.patientName}</p>
+                            <p className="text-xs text-muted-foreground">{review.date}</p>
+                          </div>
                         </div>
+                        <StarRating rating={review.rating} />
                       </div>
-                      <StarRating rating={review.rating} />
-                    </div>
-                    <p className="flex items-start gap-2 text-sm text-muted-foreground leading-relaxed">
-                      <MessageSquare className="mt-0.5 size-4 shrink-0 text-primary/50" />
-                      {review.comment}
-                    </p>
-                    <div className="flex items-center gap-1.5 text-xs text-green-600 pt-1">
-                      <ThumbsUp className="size-3.5" />
-                      <span>Verified Patient Review</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                      <p className="flex items-start gap-2 text-sm text-muted-foreground leading-relaxed">
+                        <MessageSquare className="mt-0.5 size-4 shrink-0 text-primary/50" />
+                        {review.comment}
+                      </p>
+                      <div className="flex items-center gap-1.5 text-xs text-green-600 pt-1">
+                        <ThumbsUp className="size-3.5" />
+                        <span>Verified Patient Review</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
 

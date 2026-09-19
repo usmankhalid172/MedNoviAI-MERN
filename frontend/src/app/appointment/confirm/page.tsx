@@ -2,8 +2,13 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/shared/Navbar";
+import { useAuth } from "@/hooks/useAuth";
+import { ChevronRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import api from "@/lib/api";
 
 interface Appointment {
   id: string;
@@ -17,38 +22,30 @@ interface Appointment {
 }
 
 function ConfirmationContent() {
-  const searchParams = useSearchParams();
+  const { user } = useAuth();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-
-  const queryDoctor = searchParams.get("doctor");
-  const querySpecialty = searchParams.get("specialty");
-  const queryDate = searchParams.get("date");
-  const queryTime = searchParams.get("time");
-  const queryBookingId = searchParams.get("bookingId");
+  const [appointmentsLoading, setAppointmentsLoading] = useState(true);
 
   useEffect(() => {
-    const saved = localStorage.getItem("appointments");
-    let loadedList: Appointment[] = saved ? JSON.parse(saved) : [];
-
-    if (loadedList.length === 0) {
-      loadedList = [
-        {
-          id: queryBookingId || "MN-448173",
-          doctorName: queryDoctor || "Dr. Sarah Jenkins",
-          specialty: querySpecialty || "Cardiology",
-          date: queryDate || new Date().toISOString().split("T")[0],
-          time: queryTime || "10:30 AM",
-          location: "MedNovi Medical Center, Suite 402",
-          status: "Scheduled",
-          fee: "500",
-        },
-      ];
-      localStorage.setItem("appointments", JSON.stringify(loadedList));
+    let active = true;
+    async function init() {
+      setAppointmentsLoading(true);
+      try {
+        const res = await api.get("/appointments/my");
+        const data = res.data?.appointments || res.data?.data || res.data;
+        if (active && Array.isArray(data)) {
+          setAppointments(data);
+        }
+      } catch {
+        // Fall through — treated as no appointments.
+      } finally {
+        if (active) setAppointmentsLoading(false);
+      }
     }
-
-    setAppointments(loadedList);
-  }, [queryDoctor, querySpecialty, queryDate, queryTime, queryBookingId]);
+    init();
+    return () => { active = false; };
+  }, []);
 
   const latestAppointment = appointments[0];
 
@@ -62,22 +59,77 @@ function ConfirmationContent() {
     window.print();
   };
 
+  if (appointmentsLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 font-sans">
+        <Navbar />
+        <div className="max-w-2xl mx-auto px-4 py-10 space-y-6">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm animate-pulse space-y-4">
+            <div className="mx-auto size-16 rounded-full bg-slate-200" />
+            <div className="mx-auto h-5 w-56 rounded bg-slate-200" />
+            <div className="mx-auto h-4 w-72 max-w-full rounded bg-slate-100" />
+          </div>
+          <div className="space-y-3">
+            {[1, 2].map((i) => (
+              <div key={i} className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm animate-pulse space-y-3">
+                <div className="h-4 w-1/3 rounded bg-slate-200" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="h-16 rounded-xl bg-slate-100" />
+                  <div className="h-16 rounded-xl bg-slate-100" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (appointments.length === 0) {
     return (
-      <div className="text-center py-10 text-slate-500 text-sm">
-        Loading appointments...
+      <div className="min-h-screen bg-slate-50 font-sans">
+        <Navbar />
+        <div className="text-center py-16 px-4">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+            <span className="text-2xl">📋</span>
+          </div>
+          <h2 className="text-lg font-bold text-red-600"> Error! No appointments are found </h2>
+          <p className="mt-2 text-sm text-slate-500"> You have no booked appointments yet. Book your first
+            consultation to get started. </p>
+
+          <div className="mt-3 flex justify-center items-center gap-5">
+            <a href="/patient/dashboard" aria-label="Back to home page"
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-blue-500 px-3 py-2
+              text-xs font-semibold transition text-white hover:bg-blue-700">
+              &larr; Back To Dashboard
+            </a>
+
+            <a href="/appointment/book" className="inline-flex items-center rounded-lg border border-slate-200 bg-blue-500 px-3 py-2
+              text-xs font-semibold transition text-white hover:bg-blue-700">
+              Book Appointment
+            </a>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <>
-      {/* WEB SCREEN UI (Hidden when Printing) */}
       <div className="print:hidden">
         <Navbar />
         <div className="max-w-2xl mx-auto space-y-6 py-10 px-4">
+          <nav aria-label="Breadcrumb" className="text-xs text-slate-500">
+            <ol className="flex flex-wrap items-center gap-1.5">
+              <li>
+                <Link href="/" className="font-semibold transition hover:text-blue-600">Home</Link>
+              </li>
+              <li><ChevronRight className="size-3.5 text-slate-400" /></li>
+              <li aria-current="page" className="font-semibold text-blue-600">My Consultations</li>
+            </ol>
+          </nav>
           {/* Top Success Banner */}
-          <div className="bg-white rounded-2xl p-8 border border-slate-100 shadow-sm text-center">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm text-center">
             <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-3xl font-bold mb-4">
               ✓
             </div>
@@ -89,7 +141,7 @@ function ConfirmationContent() {
             </p>
 
             {latestAppointment && (
-              <div className="mt-5 inline-flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-lg text-xs font-mono text-slate-700 border border-slate-200">
+              <div className="mt-5 inline-flex flex-wrap items-center justify-center gap-2 bg-slate-100 px-4 py-2 rounded-lg text-xs font-mono text-slate-700 border border-slate-200">
                 <span>Latest Reference:</span>
                 <span className="font-bold text-slate-900">{latestAppointment.id}</span>
                 <button
@@ -104,9 +156,14 @@ function ConfirmationContent() {
 
           {/* All Scheduled Appointments List */}
           <div className="space-y-4">
-            <h2 className="text-base font-bold text-slate-800 px-1">
-              Your Booked Consultations ({appointments.length})
-            </h2>
+            <div className="flex items-center justify-between gap-3 px-1">
+              <h2 className="text-base font-bold text-slate-800">
+                Your Booked Consultations ({appointments.length})
+              </h2>
+              <Link href="/patient/dashboard" className="text-xs bg-blue-300 font-black hover:bg-blue-400 px-2 py-1 rounded text-blue-600 hover:text-blue-700">
+                &larr; Back to dashboard
+              </Link>
+            </div>
 
             {appointments.map((item) => (
               <div
@@ -117,9 +174,9 @@ function ConfirmationContent() {
                   <span className="text-xs font-mono text-slate-500">
                     Ref: <strong className="text-slate-900">{item.id}</strong>
                   </span>
-                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full text-xs">
+                  <Badge variant="success" className="rounded-full">
                     ● {item.status}
-                  </span>
+                  </Badge>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -163,15 +220,18 @@ function ConfirmationContent() {
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3">
-            <button
+            <Button
+              variant="outline"
               onClick={handlePrint}
-              className="flex-1 bg-white border border-slate-200 text-slate-700 py-3 rounded-xl font-medium text-sm hover:bg-slate-50 transition text-center"
+              className="flex-1 border-slate-200 hover:bg-slate-50 h-11 rounded-xl"
             >
               🖨️ Print Receipt
-            </button>
+            </Button>
             <Link
               href="/appointment/book"
-              className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-medium text-sm hover:bg-blue-700 transition text-center flex items-center justify-center"
+              className={cn(
+                buttonVariants({ variant: "default", className: "flex-1 h-11 rounded-xl bg-blue-500 hover:bg-blue-700 text-white" })
+              )}
             >
               Book Another Appointment
             </Link>
@@ -197,7 +257,7 @@ function ConfirmationContent() {
 
         {/* Transaction Header Details */}
         <div className="border-b border-slate-300 pb-2 mb-4 flex justify-between text-xs font-semibold text-slate-700">
-          <div>Transaction Id: #{latestAppointment?.id || "MN-100293"}</div>
+          <div>Transaction Id: #{latestAppointment?.id || "N/A"}</div>
           <div>Issued On: {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
         </div>
 
@@ -210,8 +270,8 @@ function ConfirmationContent() {
           </div>
           <div className="text-right">
             <p className="font-bold text-slate-800">Invoice To</p>
-            <p className="font-semibold text-slate-900 text-sm">Valued Patient</p>
-            <p>+92 300 1234567</p>
+            <p className="font-semibold text-slate-900 text-sm">Patient</p>
+            <p>{user?.email || ""}</p>
             <p>Karachi, Pakistan</p>
           </div>
         </div>
@@ -229,7 +289,8 @@ function ConfirmationContent() {
         </div>
 
         {/* Items Table */}
-        <table className="w-full text-left border-collapse border border-slate-200 mb-6 text-xs">
+        <div className="overflow-x-auto mb-6">
+        <table className="w-full min-w-160 text-left border-collapse border border-slate-200 text-xs">
           <thead>
             <tr className="bg-[#38bdf8] text-white font-bold">
               <th className="p-3 border border-slate-200 w-12 text-center">#</th>
@@ -257,6 +318,7 @@ function ConfirmationContent() {
             ))}
           </tbody>
         </table>
+        </div>
 
         {/* Total Summary Box */}
         <div className="flex justify-end mb-8">
@@ -305,8 +367,23 @@ export default function AppointmentConfirmationPage() {
     <div className="min-h-screen bg-slate-50 font-sans">
       <Suspense
         fallback={
-          <div className="text-center py-10 text-slate-500 text-sm">
-            Loading details...
+          <div className="max-w-2xl mx-auto px-4 py-10 space-y-6">
+            <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm animate-pulse space-y-4">
+              <div className="mx-auto size-16 rounded-full bg-slate-200" />
+              <div className="mx-auto h-5 w-56 rounded bg-slate-200" />
+              <div className="mx-auto h-4 w-72 max-w-full rounded bg-slate-100" />
+            </div>
+            <div className="space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm animate-pulse space-y-3">
+                  <div className="h-4 w-1/3 rounded bg-slate-200" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="h-16 rounded-xl bg-slate-100" />
+                    <div className="h-16 rounded-xl bg-slate-100" />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         }
       >

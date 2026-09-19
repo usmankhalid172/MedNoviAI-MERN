@@ -6,7 +6,7 @@ export const Footer: React.FC = () => {
   return (
     <footer id="contact" className="w-full scroll-mt-20 border-t border-[#c9ddf5] bg-[#123b6d] text-white">
       <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8 lg:px-12 lg:py-14">
-        <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1.3fr]">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1.3fr]">
           <div>
             <Link href="/" className="inline-flex items-center gap-2.5 text-lg font-bold tracking-[-0.03em]">
               <span className="flex size-9 items-center justify-center rounded-xl bg-[#dcefe8] text-[#159b80]"><Stethoscope className="size-[18px]" /></span>
