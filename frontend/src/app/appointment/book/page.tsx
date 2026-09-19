@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/shared/Navbar";
+import { EmptyState } from "@/components/shared/EmptyState";
+import api from "@/lib/api";
+import { ChevronRight, Loader2 } from "lucide-react";
 
-// --- Data Types ---
 interface Doctor {
   id: string;
   name: string;
@@ -21,120 +24,48 @@ interface Specialty {
   description: string;
 }
 
-// --- Sample Data ---
-const SPECIALTIES: Specialty[] = [
-  { id: "cardiology", name: "Cardiology", icon: "❤️", description: "Heart & Vascular health" },
-  { id: "neurology", name: "Neurology", icon: "🧠", description: "Brain & Nervous system" },
-  { id: "pediatrics", name: "Pediatrics", icon: "👶", description: "Child health care" },
-  { id: "dermatology", name: "Dermatology", icon: "🩺", description: "Skin & Hair care" },
-];
-
-const DOCTORS: Doctor[] = [
-  // Cardiology Doctors
-  {
-    id: "doc-1",
-    name: "Dr. Sarah Jenkins",
-    specialtyId: "cardiology",
-    experience: "12 Yrs Exp",
-    rating: 4.9,
-    avatar: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-5",
-    name: "Dr. Marcus Vance",
-    specialtyId: "cardiology",
-    experience: "14 Yrs Exp",
-    rating: 4.8,
-    avatar: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-6",
-    name: "Dr. Anita Roy",
-    specialtyId: "cardiology",
-    experience: "10 Yrs Exp",
-    rating: 4.9,
-    avatar: "https://images.unsplash.com/photo-1651008376811-b90baee60c1f?w=150&auto=format&fit=crop&q=80",
-  },
-
-  // Neurology Doctors
-  {
-    id: "doc-2",
-    name: "Dr. Michael Chen",
-    specialtyId: "neurology",
-    experience: "9 Yrs Exp",
-    rating: 4.8,
-    avatar: "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-7",
-    name: "Dr. Elena Rostova",
-    specialtyId: "neurology",
-    experience: "11 Yrs Exp",
-    rating: 4.9,
-    avatar: "https://images.unsplash.com/photo-1594824813566-78a9c3943314?w=150&auto=format&fit=crop&q=80",
-  },
-
-  // Pediatrics Doctors
-  {
-    id: "doc-3",
-    name: "Dr. Emily Watson",
-    specialtyId: "pediatrics",
-    experience: "15 Yrs Exp",
-    rating: 4.9,
-    avatar: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-8",
-    name: "Dr. David Kim",
-    specialtyId: "pediatrics",
-    experience: "7 Yrs Exp",
-    rating: 4.7,
-    avatar: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80",
-  },
-
-  // Dermatology Doctors
-  {
-    id: "doc-4",
-    name: "Dr. Robert Fox",
-    specialtyId: "dermatology",
-    experience: "8 Yrs Exp",
-    rating: 4.7,
-    avatar: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-9",
-    name: "Dr. Sophia Martinez",
-    specialtyId: "dermatology",
-    experience: "13 Yrs Exp",
-    rating: 4.9,
-    avatar: "https://images.unsplash.com/photo-1594824813566-78a9c3943314?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-10",
-    name: "Dr. James Wilson",
-    specialtyId: "dermatology",
-    experience: "6 Yrs Exp",
-    rating: 4.6,
-    avatar: "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80",
-  },
-];
-
-const TIME_SLOTS = [
-  "09:00 AM",
-  "10:30 AM",
-  "11:45 AM",
-  "02:00 PM",
-  "03:30 PM",
-  "05:00 PM",
-];
-
 const STEPS = ["Specialty", "Doctor", "Date & Time", "Confirm"];
+
+function StepSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="p-4 rounded-xl border border-slate-200 animate-pulse">
+          <div className="h-6 w-6 rounded bg-slate-200 mb-2" />
+          <div className="h-4 w-1/2 rounded bg-slate-200 mb-1" />
+          <div className="h-3 w-2/3 rounded bg-slate-100" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DoctorListSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[1, 2].map((i) => (
+        <div key={i} className="flex items-center p-4 rounded-xl border border-slate-200 animate-pulse">
+          <div className="w-14 h-14 rounded-full bg-slate-200 mr-4 shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-1/2 rounded bg-slate-200" />
+            <div className="h-3 w-1/3 rounded bg-slate-100" />
+          </div>
+          <div className="h-6 w-12 rounded-full bg-slate-200" />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function BookAppointmentPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<number>(1);
 
-  // Form State
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
+
   const [selectedSpecialty, setSelectedSpecialty] = useState<Specialty | null>(null);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -142,67 +73,158 @@ export default function BookAppointmentPage() {
   );
   const [selectedTime, setSelectedTime] = useState<string>("");
 
-  // Step Navigators
-  const handleNext = () => {
-    if (currentStep < 4) {
-      setCurrentStep((prev) => prev + 1);
+  const [timeSlots, setTimeSlots] = useState<string[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchData() {
+      try {
+        setDataLoading(true);
+        const [specRes, docRes] = await Promise.all([
+          api.get("/specialties").catch(() => ({ data: null })),
+          api.get("/doctors").catch(() => ({ data: null })),
+        ]);
+        if (!cancelled) {
+          const specData = specRes.data?.specialties || specRes.data?.data || specRes.data;
+          setSpecialties(Array.isArray(specData) ? specData : []);
+          const docData = docRes.data?.doctors || docRes.data?.data || docRes.data;
+          setAllDoctors(Array.isArray(docData) ? docData : []);
+        }
+      } catch {
+        if (!cancelled) setDataError("Unable to load booking data. Please try again later.");
+      } finally {
+        if (!cancelled) setDataLoading(false);
+      }
     }
+    fetchData();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedDoctor || currentStep !== 3) return;
+
+    let cancelled = false;
+
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setSlotsLoading(true);
+      setSlotsError(null);
+      setSelectedTime("");
+    });
+
+    api
+      .get(`/doctors/${selectedDoctor.id}/availability`, {
+        params: { date: selectedDate },
+      })
+      .then((res) => {
+        const data = res.data?.slots || res.data?.availability || res.data?.data || res.data;
+        if (!cancelled && Array.isArray(data)) {
+          setTimeSlots(
+            data
+              .map((slot: string | { time: string }) =>
+                typeof slot === "string" ? slot : slot?.time
+              )
+              .filter(Boolean)
+          );
+        } else if (!cancelled) {
+          setTimeSlots([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSlotsError("Unable to load available time slots. Please try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [selectedDoctor, currentStep, selectedDate]);
+
+  const handleNext = () => {
+    if (currentStep < 4) setCurrentStep((prev) => prev + 1);
   };
 
   const handleBack = () => {
-    if (currentStep > 1) {
-      setCurrentStep((prev) => prev - 1);
+    if (currentStep > 1) setCurrentStep((prev) => prev - 1);
+  };
+
+  const handleFinalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (currentStep !== 4 || !selectedDoctor || !selectedSpecialty || !selectedTime) return;
+
+    setSubmitError(null);
+    setSubmitting(true);
+
+    try {
+      const res = await api.post("/appointments", {
+        doctorId: selectedDoctor.id,
+        doctorName: selectedDoctor.name,
+        specialty: selectedSpecialty.name,
+        date: selectedDate,
+        time: selectedTime,
+        location: "MedNovi Medical Center, Suite 402",
+      });
+
+      const created = res.data?.appointment || res.data?.data || res.data;
+      const bookingRef =
+        created?.id ||
+        created?.bookingId ||
+        "MN-" + Math.floor(100000 + Math.random() * 900000);
+
+      const query = new URLSearchParams({
+        specialty: selectedSpecialty.name,
+        doctor: selectedDoctor.name,
+        date: selectedDate,
+        time: selectedTime,
+        bookingId: bookingRef,
+      }).toString();
+
+      router.push(`/appointment/confirm?${query}`);
+    } catch {
+      setSubmitError("Unable to confirm your booking. Please try again later.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  // Step 4 par Confirm Booking handle karna aur localStorage me save karna
-  const handleFinalSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (currentStep !== 4) return;
-
-    const bookingRef = "MN-" + Math.floor(100000 + Math.random() * 900000);
-
-    const newAppointment = {
-      id: bookingRef,
-      doctorName: selectedDoctor?.name || "Dr. Sarah Jenkins",
-      specialty: selectedSpecialty?.name || "Cardiology",
-      date: selectedDate,
-      time: selectedTime || "10:30 AM",
-      location: "MedNovi Medical Center, Suite 402",
-      status: "Scheduled",
-    };
-
-    // Existing appointments get karke new item front par array me store karna
-    const existingAppointments = JSON.parse(
-      localStorage.getItem("appointments") || "[]"
-    );
-    const updatedAppointments = [newAppointment, ...existingAppointments];
-    localStorage.setItem("appointments", JSON.stringify(updatedAppointments));
-
-    const query = new URLSearchParams({
-      specialty: newAppointment.specialty,
-      doctor: newAppointment.doctorName,
-      date: newAppointment.date,
-      time: newAppointment.time,
-      bookingId: bookingRef,
-    }).toString();
-
-    router.push(`/appointment/confirm?${query}`);
-  };
-
-  // Filter doctors based on step 1 selection
-  const availableDoctors = DOCTORS.filter(
+  const availableDoctors = allDoctors.filter(
     (doc) => doc.specialtyId === selectedSpecialty?.id
   );
 
   return (
     <>
       <Navbar />
-      <div className="min-h-screen w-full bg-slate-50 py-25 sm:pl-20 sm:pr-5 font-sans">
+      <div className="min-h-screen w-full bg-slate-50 px-4 py-24 sm:px-6 sm:py-28 font-sans">
+        <div className="mx-auto mb-4 max-w-3xl">
+          <nav aria-label="Breadcrumb" className="text-xs text-slate-500">
+            <ol className="flex flex-wrap items-center gap-1.5">
+              <li>
+                <Link href="/" className="font-semibold transition hover:text-blue-600">Home</Link>
+              </li>
+              <li><ChevronRight className="size-3.5 text-slate-400" /></li>
+              <li aria-current="page" className="font-semibold text-blue-600">Book Appointment</li>
+            </ol>
+          </nav>
+        </div>
         <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           {/* Header */}
-          <div className="bg-blue-600 px-8 py-6 text-white">
+          <div className="bg-blue-900 px-5 py-6 text-white sm:px-8">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => window.history.back()}
+                className="inline-flex items-center rounded-lg bg-blue-500 px-3 
+                py-1.5 text-xs font-semibold text-white cursor-pointer hover:bg-blue-700"
+              >
+                &larr; Go Back
+              </button>
+              <span className="text-xs font-medium uppercase tracking-[0.12em] text-blue-100">Appointment</span>
+            </div>
             <h1 className="text-2xl font-bold">Book an Appointment</h1>
             <p className="text-blue-100 text-sm mt-1">
               Complete the 4 steps to book your consultation.
@@ -210,31 +232,20 @@ export default function BookAppointmentPage() {
           </div>
 
           {/* Progress Indicator */}
-          <div className="border-b border-slate-100 bg-slate-50/50 px-8 py-4">
+          <div className="border-b border-slate-100 bg-slate-50/50 px-5 py-4 sm:px-8">
             <div className="flex justify-between items-center">
               {STEPS.map((stepLabel, idx) => {
                 const stepNum = idx + 1;
                 const isActive = currentStep === stepNum;
                 const isCompleted = currentStep > stepNum;
-
                 return (
                   <div key={stepLabel} className="flex items-center space-x-2">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
-                        isCompleted
-                          ? "bg-emerald-500 text-white"
-                          : isActive
-                          ? "bg-blue-600 text-white"
-                          : "bg-slate-200 text-slate-500"
-                      }`}
-                    >
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
+                      isCompleted ? "bg-emerald-500 text-white" : isActive ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-500"
+                    }`}>
                       {isCompleted ? "✓" : stepNum}
                     </div>
-                    <span
-                      className={`text-xs font-medium hidden sm:inline ${
-                        isActive ? "text-blue-600 font-semibold" : "text-slate-500"
-                      }`}
-                    >
+                    <span className={`text-xs font-medium hidden sm:inline ${isActive ? "text-blue-600 font-semibold" : "text-slate-500"}`}>
                       {stepLabel}
                     </span>
                   </div>
@@ -244,37 +255,40 @@ export default function BookAppointmentPage() {
           </div>
 
           {/* Form Body */}
-          <div className="p-8">
+          <div className="p-5 sm:p-8">
             <form onSubmit={handleFinalSubmit}>
               {/* STEP 1: Select Specialty */}
               {currentStep === 1 && (
                 <div className="space-y-4">
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Step 1: Select Specialty
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {SPECIALTIES.map((spec) => {
-                      const isSelected = selectedSpecialty?.id === spec.id;
-                      return (
-                        <div
-                          key={spec.id}
-                          onClick={() => {
-                            setSelectedSpecialty(spec);
-                            setSelectedDoctor(null);
-                          }}
-                          className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                            isSelected
-                              ? "border-blue-600 bg-blue-50/40 ring-1 ring-blue-600"
-                              : "border-slate-200 hover:border-slate-300"
-                          }`}
-                        >
-                          <div className="text-2xl mb-2">{spec.icon}</div>
-                          <h3 className="font-semibold text-slate-800">{spec.name}</h3>
-                          <p className="text-xs text-slate-500 mt-1">{spec.description}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <h2 className="text-lg font-bold text-slate-800">Step 1: Select Specialty</h2>
+                  {dataLoading ? (
+                    <StepSkeleton />
+                  ) : dataError ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                      <p className="text-sm font-semibold text-slate-700">{dataError}</p>
+                    </div>
+                  ) : specialties.length === 0 ? (
+                    <EmptyState title="No specialties available" message="Specialty data will appear here once connected to the server." />
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {specialties.map((spec) => {
+                        const isSelected = selectedSpecialty?.id === spec.id;
+                        return (
+                          <div
+                            key={spec.id}
+                            onClick={() => { setSelectedSpecialty(spec); setSelectedDoctor(null); }}
+                            className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                              isSelected ? "border-blue-600 bg-blue-50/40 ring-1 ring-blue-600" : "border-slate-200 hover:border-slate-300"
+                            }`}
+                          >
+                            <div className="text-2xl mb-2">{spec.icon}</div>
+                            <h3 className="font-semibold text-slate-800">{spec.name}</h3>
+                            <p className="text-xs text-slate-500 mt-1">{spec.description}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -284,50 +298,44 @@ export default function BookAppointmentPage() {
                   <h2 className="text-lg font-bold text-slate-800">
                     Step 2: Choose Doctor ({selectedSpecialty?.name})
                   </h2>
-
-                  <div className="grid grid-cols-1 gap-4 max-h-[360px] overflow-y-auto pr-1">
-                    {availableDoctors.map((doc) => {
-                      const isSelected = selectedDoctor?.id === doc.id;
-                      return (
-                        <div
-                          key={doc.id}
-                          onClick={() => setSelectedDoctor(doc)}
-                          className={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${
-                            isSelected
-                              ? "border-blue-600 bg-blue-50/40 ring-1 ring-blue-600"
-                              : "border-slate-200 hover:border-slate-300"
-                          }`}
-                        >
-                          <img
-                            src={doc.avatar}
-                            alt={doc.name}
-                            className="w-14 h-14 rounded-full object-cover mr-4"
-                          />
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-slate-800">{doc.name}</h3>
-                            <p className="text-xs text-slate-500">{doc.experience}</p>
+                  {dataLoading ? (
+                    <DoctorListSkeleton />
+                  ) : availableDoctors.length === 0 ? (
+                    <EmptyState title="No doctors available" message="No doctors are listed for this specialty yet. Please try a different specialty." />
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 max-h-90 overflow-y-auto pr-1">
+                      {availableDoctors.map((doc) => {
+                        const isSelected = selectedDoctor?.id === doc.id;
+                        return (
+                          <div
+                            key={doc.id}
+                            onClick={() => setSelectedDoctor(doc)}
+                            className={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${
+                              isSelected ? "border-blue-600 bg-blue-50/40 ring-1 ring-blue-600" : "border-slate-200 hover:border-slate-300"
+                            }`}
+                          >
+                            <img src={doc.avatar} alt={doc.name} className="w-14 h-14 rounded-full object-cover mr-4" />
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-slate-800">{doc.name}</h3>
+                              <p className="text-xs text-slate-500">{doc.experience}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full">
+                              ★ {doc.rating}
+                            </span>
                           </div>
-                          <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full">
-                            ★ {doc.rating}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* STEP 3: Date & Time Picker */}
               {currentStep === 3 && (
                 <div className="space-y-6">
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Step 3: Select Date & Time Slot
-                  </h2>
-
+                  <h2 className="text-lg font-bold text-slate-800">Step 3: Select Date & Time Slot</h2>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-2">
-                      Choose Date
-                    </label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-2">Choose Date</label>
                     <input
                       type="date"
                       value={selectedDate}
@@ -335,30 +343,35 @@ export default function BookAppointmentPage() {
                       className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-2">
-                      Available Slots
-                    </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {TIME_SLOTS.map((slot) => {
-                        const isSelected = selectedTime === slot;
-                        return (
-                          <button
-                            type="button"
-                            key={slot}
-                            onClick={() => setSelectedTime(slot)}
-                            className={`p-3 text-xs font-semibold rounded-lg border transition-all ${
-                              isSelected
-                                ? "bg-blue-600 text-white border-blue-600"
-                                : "border-slate-200 hover:border-slate-300 text-slate-700"
-                            }`}
-                          >
-                            {slot}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-2">Available Slots</label>
+                    {slotsLoading ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {[1, 2, 3, 4, 5, 6].map((i) => (
+                          <div key={i} className="h-10 rounded-lg bg-slate-100 animate-pulse" />
+                        ))}
+                      </div>
+                    ) : slotsError ? (
+                      <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-600">{slotsError}</p>
+                    ) : timeSlots.length === 0 ? (
+                      <EmptyState
+                        title="No time slots available"
+                        message="No open slots are available for this doctor on the selected date."
+                      />
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {timeSlots.map((slot) => {
+                          const isSelected = selectedTime === slot;
+                          return (
+                            <button type="button" key={slot} onClick={() => setSelectedTime(slot)} className={`p-3 text-xs font-semibold rounded-lg border transition-all ${
+                              isSelected ? "bg-blue-600 text-white border-blue-600" : "border-slate-200 hover:border-slate-300 text-slate-700"
+                            }`}>
+                              {slot}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -366,48 +379,32 @@ export default function BookAppointmentPage() {
               {/* STEP 4: Confirm Booking */}
               {currentStep === 4 && (
                 <div className="space-y-4">
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Step 4: Confirm Booking Summary
-                  </h2>
+                  <h2 className="text-lg font-bold text-slate-800">Step 4: Confirm Booking Summary</h2>
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-100 space-y-3 text-sm">
-                    <div className="flex justify-between border-b border-slate-200 pb-2">
-                      <span className="text-slate-500">Specialty:</span>
-                      <span className="font-semibold text-slate-800">
-                        {selectedSpecialty?.name}
-                      </span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-200 pb-2">
-                      <span className="text-slate-500">Doctor:</span>
-                      <span className="font-semibold text-slate-800">
-                        {selectedDoctor?.name}
-                      </span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-200 pb-2">
-                      <span className="text-slate-500">Date:</span>
-                      <span className="font-semibold text-slate-800">
-                        {selectedDate}
-                      </span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-200 pb-2">
-                      <span className="text-slate-500">Time Slot:</span>
-                      <span className="font-semibold text-slate-800">
-                        {selectedTime}
-                      </span>
-                    </div>
+                    {[
+                      { label: "Specialty:", value: selectedSpecialty?.name },
+                      { label: "Doctor:", value: selectedDoctor?.name },
+                      { label: "Date:", value: selectedDate },
+                      { label: "Time Slot:", value: selectedTime },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                        <span className="shrink-0 text-slate-500">{label}</span>
+                        <span className="min-w-0 text-right font-semibold text-slate-800">{value}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
               {/* Navigation Buttons */}
+              {submitError && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
               <div className="mt-8 flex justify-between items-center border-t border-slate-100 pt-5">
                 <button
                   type="button"
                   onClick={handleBack}
                   disabled={currentStep === 1}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                    currentStep === 1
-                      ? "opacity-0 cursor-default"
-                      : "text-slate-600 hover:bg-slate-100"
+                    currentStep === 1 ? "opacity-0 cursor-default" : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
                   Back
@@ -429,9 +426,16 @@ export default function BookAppointmentPage() {
                 ) : (
                   <button
                     type="submit"
-                    className="bg-emerald-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 transition"
+                    disabled={!selectedDoctor || !selectedSpecialty || submitting}
+                    className="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition"
                   >
-                    Confirm Booking
+                    {submitting ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" /> Confirming...
+                      </>
+                    ) : (
+                      "Confirm Booking"
+                    )}
                   </button>
                 )}
               </div>

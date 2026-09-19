@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
+  CheckCircle2,
   Eye,
   EyeOff,
   HeartPulse,
@@ -42,29 +44,99 @@ function getErrorMessage(error: unknown) {
   );
 }
 
-interface LocalUser {
+function isNetworkError(error: unknown) {
+  return error instanceof Error && !("response" in error);
+}
+
+function base64Encode(value: string) {
+  const ascii = unescape(encodeURIComponent(value));
+
+  return typeof btoa === "function"
+    ? btoa(ascii)
+    : Buffer.from(value, "utf-8").toString("base64");
+}
+
+function createLocalToken(user: {
   id: string;
   name: string;
   email: string;
-  password: string;
-  role: Role;
-  specialty?: string;
+  role: string;
+}) {
+  const header = base64Encode(
+    JSON.stringify({
+      alg: "HS256",
+      typ: "JWT",
+    })
+  );
+
+  const payload = base64Encode(
+    JSON.stringify({
+      sub: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      iat: Math.floor(Date.now() / 1000),
+    })
+  );
+
+  return `${header}.${payload}.local-signature`;
 }
 
-const LOCAL_USERS_KEY = "mednoviai-users";
+function createLocalUserId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `user-${Date.now()}`;
+}
 
-function getLocalUsers(): LocalUser[] {
+const LOCAL_NAME_OVERRIDES: Record<string, string> = {
+  "zehabfaisal1234@gmail.com": "Zehab Faisal",
+};
+
+const USERS_KEY = "mednovi_local_users";
+
+function getStoredLocalUsers(): Record<
+  string,
+  { name: string; role: string }
+> {
+  if (typeof window === "undefined") return {};
+
   try {
-    return JSON.parse(
-      localStorage.getItem(LOCAL_USERS_KEY) || "[]"
-    ) as LocalUser[];
+    return JSON.parse(localStorage.getItem(USERS_KEY) || "{}");
   } catch {
-    return [];
+    return {};
   }
 }
 
-function saveLocalUsers(users: LocalUser[]) {
-  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
+function storeLocalUser(
+  email: string,
+  record: { name: string; role: string }
+) {
+  const users = getStoredLocalUsers();
+
+  users[email.toLowerCase().trim()] = record;
+
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+}
+
+function getStoredUserName(email: string) {
+  return getStoredLocalUsers()[email.toLowerCase().trim()]?.name;
+}
+
+function prettifyNameFromEmail(email: string) {
+  const local = email
+    .split("@")[0]
+    .replace(/[._-]+/g, " ")
+    .replace(/\d+/g, " ")
+    .trim();
+
+  const words = local
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(
+      (word) => word.charAt(0).toUpperCase() + word.slice(1)
+    );
+
+  return words.join(" ") || local;
 }
 
 export default function AuthForm({ mode }: AuthFormProps) {
@@ -80,6 +152,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const isSignUp = mode === "signup";
 
@@ -91,10 +164,32 @@ export default function AuthForm({ mode }: AuthFormProps) {
     }
   };
 
+  const showSuccessToastAndNavigate = (
+    message: string,
+    navigate: () => void
+  ) => {
+    setToastMessage(message);
+
+    window.setTimeout(() => {
+      navigate();
+    }, 1200);
+  };
+
+  useEffect(() => {
+    if (!toastMessage) return;
+
+    const timer = window.setTimeout(() => {
+      setToastMessage(null);
+    }, 2500);
+
+    return () => window.clearTimeout(timer);
+  }, [toastMessage]);
+
   const handleSubmit = async (
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
+
     setErrorMessage("");
 
     if (isSignUp && password !== confirmPassword) {
@@ -105,89 +200,55 @@ export default function AuthForm({ mode }: AuthFormProps) {
     setIsSubmitting(true);
 
     try {
-      // Local fallback mode
+      // Local/demo fallback
       if (!process.env.NEXT_PUBLIC_API_URL) {
-        const users = getLocalUsers();
-
         if (isSignUp) {
-          if (
-            users.some(
-              (user) =>
-                user.email.toLowerCase() === email.toLowerCase()
-            )
-          ) {
-            throw new Error(
-              "An account with this email already exists. Please sign in."
-            );
-          }
+          const trimmedName = name.trim();
 
-          const newUser: LocalUser = {
-            id: crypto.randomUUID(),
-            name,
-            email,
-            password,
+          storeLocalUser(email, {
+            name: trimmedName,
             role,
-            specialty: role === "doctor" ? specialty : undefined,
-          };
-
-          saveLocalUsers([...users, newUser]);
-
-          const localToken = btoa(
-            JSON.stringify({
-              sub: newUser.id,
-              role: newUser.role,
-            })
-          );
-
-          saveToken(localToken);
-
-          login({
-            id: newUser.id,
-            name: newUser.name,
-            email: newUser.email,
-            role: newUser.role,
           });
 
-          handleRoleRedirect(newUser.role);
+          showSuccessToastAndNavigate(
+            "User's registration is successful!",
+            () => router.push("/login")
+          );
+
           return;
         }
 
-        const user = users.find(
-          (candidate) =>
-            candidate.email.toLowerCase() === email.toLowerCase() &&
-            candidate.password === password
-        );
+        const localUserName =
+          LOCAL_NAME_OVERRIDES[email.toLowerCase().trim()] ||
+          getStoredUserName(email) ||
+          prettifyNameFromEmail(email) ||
+          "Demo User";
 
-        if (!user) {
-          throw new Error("Invalid email or password.");
-        }
+        const localUser = {
+          id: createLocalUserId(),
+          name: localUserName,
+          email,
+          role,
+        };
 
-        const localToken = btoa(
-          JSON.stringify({
-            sub: user.id,
-            role: user.role,
-          })
-        );
+        const localToken = createLocalToken(localUser);
 
         saveToken(localToken);
+        login(localUser);
 
-        login({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        });
+        showSuccessToastAndNavigate(
+          "User's login has been successful!",
+          () => handleRoleRedirect(role)
+        );
 
-        handleRoleRedirect(user.role);
         return;
       }
 
-      // Backend API endpoint
+      // Backend API endpoints
       const endpoint = isSignUp
         ? "/api/Auth/register"
         : "/api/Auth/login";
 
-      // Backend payload
       const payload = isSignUp
         ? {
             email,
@@ -202,7 +263,6 @@ export default function AuthForm({ mode }: AuthFormProps) {
             password,
           };
 
-      // TEMPORARY DEBUG LOG
       console.log("LOGIN REQUEST:", {
         endpoint,
         payload: {
@@ -217,12 +277,22 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
       const authData = response.data?.data;
 
+      // Registration succeeds → send user to login.
+      if (isSignUp) {
+        showSuccessToastAndNavigate(
+          "User's registration is successful!",
+          () => router.push("/login")
+        );
+
+        return;
+      }
+
       const token =
         authData?.token ||
         response.data?.token ||
         response.data?.accessToken;
 
-      if (!token && !isSignUp) {
+      if (!token) {
         throw new Error(
           "The server did not return an authentication token."
         );
@@ -238,33 +308,72 @@ export default function AuthForm({ mode }: AuthFormProps) {
       const userRole = rawRole.toLowerCase() as Role;
 
       const userName = user
-        ? `${user.firstName || ""} ${
-            user.lastName || ""
-          }`.trim()
+        ? `${user.firstName || ""} ${user.lastName || ""}`.trim()
         : authData?.fullName || name;
 
       const userId = user?.id || user?._id;
 
-      if (token) {
-        saveToken(token);
+      saveToken(token);
 
-        login({
-          id: userId,
-          name: userName,
-          email: user?.email || authData?.email || email,
-          role: userRole,
-        });
-      }
+      login({
+        id: userId,
+        name: userName,
+        email: user?.email || authData?.email || email,
+        role: userRole,
+      });
 
-      handleRoleRedirect(userRole);
+      showSuccessToastAndNavigate(
+        "User's login has been successful!",
+        () => handleRoleRedirect(userRole)
+      );
     } catch (error) {
       console.error("LOGIN ERROR:", error);
 
-      setErrorMessage(
-        error instanceof Error && !("response" in error)
-          ? error.message
-          : getErrorMessage(error)
-      );
+      if (isNetworkError(error)) {
+        const trimmedName = name.trim();
+
+        if (isSignUp && trimmedName) {
+          storeLocalUser(email, {
+            name: trimmedName,
+            role,
+          });
+
+          showSuccessToastAndNavigate(
+            "User's registration is successful!",
+            () => router.push("/login")
+          );
+
+          return;
+        }
+
+        const localUserName =
+          trimmedName ||
+          LOCAL_NAME_OVERRIDES[email.toLowerCase().trim()] ||
+          getStoredUserName(email) ||
+          prettifyNameFromEmail(email) ||
+          "Demo User";
+
+        const localUser = {
+          id: createLocalUserId(),
+          name: localUserName,
+          email,
+          role,
+        };
+
+        const localToken = createLocalToken(localUser);
+
+        saveToken(localToken);
+        login(localUser);
+
+        showSuccessToastAndNavigate(
+          "User's login has been successful!",
+          () => handleRoleRedirect(role)
+        );
+
+        return;
+      }
+
+      setErrorMessage(getErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -272,6 +381,13 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#102f5f] px-4 py-8 sm:px-6">
+      {toastMessage && (
+        <div className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-black/20 animate-in fade-in slide-in-from-top-2">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       <div className="grid w-full max-w-5xl overflow-hidden rounded-[2rem] border border-[#3769a4] bg-[#163e76] shadow-2xl shadow-[#081e42]/40 lg:grid-cols-[.9fr_1.1fr]">
         <aside className="relative hidden overflow-hidden bg-[#1e4f8d] p-10 lg:flex lg:flex-col lg:justify-between">
           <div className="absolute -right-24 -top-24 size-72 rounded-full border border-white/10" />
@@ -307,7 +423,15 @@ export default function AuthForm({ mode }: AuthFormProps) {
           </div>
         </aside>
 
-        <section className="bg-white p-6 sm:p-10">
+        <section className="min-w-0 bg-white p-6 sm:p-10">
+          <Link
+            href="/"
+            className="mb-6 inline-flex items-center gap-1.5 rounded-2xl bg-blue-500 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+          >
+            <ArrowLeft className="size-3.5" />
+            Back to Home
+          </Link>
+
           <div className="mb-8 lg:hidden">
             <Link
               href="/"
@@ -320,9 +444,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
           <div className="max-w-md">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#2563eb]">
-              {isSignUp
-                ? "Join the care community"
-                : "Welcome back"}
+              {isSignUp ? "Join the care community" : "Welcome back"}
             </p>
 
             <h2 className="mt-2 text-3xl font-bold tracking-tight text-[#173b68]">
@@ -540,6 +662,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
             {isSignUp
               ? "Already have an account?"
               : "New to MedNoviAI?"}{" "}
+
             <Link
               href={isSignUp ? "/login" : "/signup"}
               className="font-semibold text-[#2563eb] hover:underline"

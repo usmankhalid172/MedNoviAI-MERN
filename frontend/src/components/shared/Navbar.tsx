@@ -30,18 +30,17 @@ export const Navbar: React.FC = () => {
   };
 
   const authActions = isLoggedIn ? (
-    <button
-      type="button"
-      onClick={handleLogout}
-      className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500"
-    >
-      <LogOut className="size-4" />
+    <button type="button" onClick={handleLogout} className="inline-flex h-10 items-center justify-center gap-2
+       rounded-xl bg-red-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-red-500">
+      <LogOut className="size-4" /> 
       Logout
     </button>
   ) : (
     <>
-      <Link href="/login" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-400">Login</Link>
-      <Link href="/signup" className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-400">Sign Up</Link>
+      <Link href="/login" className="inline-flex h-10 items-center justify-center rounded-xl bg-blue-500
+       px-4 text-sm text-white transition-colors hover:bg-blue-700"> Login </Link>
+      <Link href="/signup" className="inline-flex h-10 items-center justify-center rounded-xl bg-blue-500 
+      px-4 text-sm text-white transition-colors hover:bg-blue-700"> Sign Up </Link>
     </>
   );
 
@@ -54,7 +53,8 @@ export const Navbar: React.FC = () => {
 
         <nav className="hidden items-center gap-2 md:flex">
           {navLinks.map((link) => (
-            <Link key={link.name} href={link.href} className="rounded-md px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10 hover:text-white">
+            <Link key={link.name} href={link.href} className="rounded-md px-4 py-2 text-sm font-medium
+             text-white transition-colors hover:text-white">
               {link.name}
             </Link>
           ))}
@@ -67,7 +67,7 @@ export const Navbar: React.FC = () => {
             <SheetTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/30 bg-white/10 text-white transition-colors hover:bg-white/20" aria-label="Open navigation menu">
               <Menu className="size-5" />
             </SheetTrigger>
-            <SheetContent side="right" className="w-[280px] bg-[#102f5f] text-white sm:w-[350px]">
+            <SheetContent side="right" className="w-70 bg-[#102f5f] text-white sm:w-87.5">
               <SheetHeader className="px-6 pt-4 text-left">
                 <SheetTitle className="text-xl font-bold text-white">MedNoviAI</SheetTitle>
               </SheetHeader>

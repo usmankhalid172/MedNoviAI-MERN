@@ -36,18 +36,40 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   useEffect(() => {
     const token = getToken();
-    const savedUser = localStorage.getItem(USER_KEY);
 
-    if (token) {
-      setIsLoggedIn(true);
+    if (!token) {
+      setIsLoggedIn(false);
+      return;
     }
+
+    setIsLoggedIn(true);
+
+    const savedUser = localStorage.getItem(USER_KEY);
 
     if (savedUser) {
       try {
         setUser(JSON.parse(savedUser));
+        return;
       } catch {
         localStorage.removeItem(USER_KEY);
       }
+    }
+
+    // Fallback: get user information from JWT token
+    try {
+      const raw = token.includes(".") ? token.split(".")[1] : token;
+
+      const payload = JSON.parse(atob(raw));
+
+      setUser({
+        id: payload.sub || payload.id || payload.userId,
+        name: payload.name,
+        email: payload.email,
+        role: payload.role,
+      });
+    } catch {
+      // Token exists but is not decodable.
+      // User remains logged in, but user details are unavailable.
     }
   }, []);
 
