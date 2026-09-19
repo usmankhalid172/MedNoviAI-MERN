@@ -1,269 +1,219 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import Navbar from "@/components/shared/Navbar";
-import DoctorCard from "@/components/doctors/DoctorCard";
-import DoctorSkeleton from "@/components/doctors/DoctorSkeleton";
-import EmptyDoctors from "@/components/doctors/EmptyDoctors";
-import { useDebounce } from "@/hooks/useDebounce";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import api from "@/lib/api";
-import { Doctor, Specialty } from "@/types/doctor";
-import { Search } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
 
-// Temporary mock data (remove later when real APIs are ready)
-const MOCK_SPECIALTIES: Specialty[] = [
-  { id: "1", name: "Cardiology" },
-  { id: "2", name: "Neurology" },
-  { id: "3", name: "Pediatrics" },
-  { id: "4", name: "Dermatology" },
-  { id: "5", name: "Orthopedics" },
-  { id: "6", name: "General Physician" },
-];
+interface Doctor {
+  id: string;
+  name: string;
+  specialty: string;
+  experience: string;
+  rating: number;
+  reviewsCount: number;
+  location: string;
+  availableSlot: string;
+  avatar: string;
+  consultationFee: string;
+}
 
-const MOCK_DOCTORS: Doctor[] = [
-  {
-    id: "doc-1",
-    name: "Dr. Sarah Jenkins",
-    specialty: "Cardiology",
-    specialtyId: "1",
-    experience: "12 Yrs Exp",
-    rating: 4.9,
-    reviewsCount: 124,
-    avatar:
-      "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-2",
-    name: "Dr. Michael Chen",
-    specialty: "Neurology",
-    specialtyId: "2",
-    experience: "9 Yrs Exp",
-    rating: 4.8,
-    reviewsCount: 98,
-    avatar:
-      "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-3",
-    name: "Dr. Emily Watson",
-    specialty: "Pediatrics",
-    specialtyId: "3",
-    experience: "15 Yrs Exp",
-    rating: 4.9,
-    reviewsCount: 210,
-    avatar:
-      "https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-4",
-    name: "Dr. James Wilson",
-    specialty: "Dermatology",
-    specialtyId: "4",
-    experience: "8 Yrs Exp",
-    rating: 4.7,
-    reviewsCount: 76,
-    avatar:
-      "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-5",
-    name: "Dr. Ayesha Khan",
-    specialty: "Orthopedics",
-    specialtyId: "5",
-    experience: "11 Yrs Exp",
-    rating: 4.8,
-    reviewsCount: 142,
-    avatar:
-      "https://images.unsplash.com/photo-1651008376811-b90baee60c1f?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-6",
-    name: "Dr. Robert Lee",
-    specialty: "General Physician",
-    specialtyId: "6",
-    experience: "14 Yrs Exp",
-    rating: 4.6,
-    reviewsCount: 189,
-    avatar:
-      "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=150&auto=format&fit=crop&q=80",
-  },
-];
+function DoctorCardSkeleton() {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200/80 p-6 flex flex-col justify-between space-y-4">
+      <div className="flex items-start gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-slate-200 animate-pulse shrink-0" />
+        <div className="flex-1 space-y-2">
+          <div className="h-4 w-2/3 rounded bg-slate-200 animate-pulse" />
+          <div className="h-3 w-1/3 rounded bg-slate-200 animate-pulse" />
+          <div className="h-3 w-1/2 rounded bg-slate-100 animate-pulse" />
+        </div>
+      </div>
+      <div className="flex gap-2 pt-2">
+        <div className="flex-1 h-10 rounded-xl bg-slate-200 animate-pulse" />
+        <div className="flex-1 h-10 rounded-xl bg-slate-200 animate-pulse" />
+      </div>
+    </div>
+  );
+}
 
 export default function DoctorDirectoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSpecialty, setSelectedSpecialty] = useState("");
-  const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [specialtiesLoading, setSpecialtiesLoading] = useState(true);
-  const [useMock, setUseMock] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const debouncedSearch = useDebounce(searchQuery, 300);
-
-  // Load specialties
   useEffect(() => {
-    const fetchSpecialties = async () => {
-      try {
-        setSpecialtiesLoading(true);
-        const res = await api.get("/api/specialties");
-        const data = res.data?.data || res.data || [];
-        setSpecialties(
-          Array.isArray(data) && data.length > 0 ? data : MOCK_SPECIALTIES
-        );
-        setUseMock(false);
-      } catch {
-        console.warn("Specialties API not available, using mock data");
-        setSpecialties(MOCK_SPECIALTIES);
-        setUseMock(true);
-      } finally {
-        setSpecialtiesLoading(false);
-      }
-    };
-
-    fetchSpecialties();
-  }, []);
-
-  // Load / filter doctors
-  useEffect(() => {
-    const fetchDoctors = async () => {
+    let cancelled = false;
+    async function fetchDoctors() {
       try {
         setLoading(true);
-
-        // Try real API first
-        if (!useMock) {
-          const params: Record<string, string> = {};
-          if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
-          if (selectedSpecialty) params.specialty = selectedSpecialty;
-
-          const res = await api.get("/api/doctors", { params });
-          const data = res.data?.data || res.data || [];
-
-          if (Array.isArray(data) && data.length > 0) {
-            setDoctors(data);
-            setLoading(false);
-            return;
-          }
+        setError(null);
+        const res = await api.get("/doctors");
+        if (!cancelled) {
+          const data = res.data?.doctors || res.data?.data || res.data;
+          const list = Array.isArray(data) ? data : [];
+          setAllDoctors(list);
+          setDoctors(list);
         }
-
-        // Fallback to mock filtering
-        let filtered = [...MOCK_DOCTORS];
-
-        if (debouncedSearch.trim()) {
-          const q = debouncedSearch.toLowerCase();
-          filtered = filtered.filter(
-            (d) =>
-              d.name.toLowerCase().includes(q) ||
-              d.specialty.toLowerCase().includes(q)
-          );
-        }
-
-        if (selectedSpecialty) {
-          filtered = filtered.filter(
-            (d) => d.specialtyId === selectedSpecialty
-          );
-        }
-
-        setDoctors(filtered);
       } catch {
-        console.warn("Doctors API not available, using mock data");
-        setUseMock(true);
-
-        let filtered = [...MOCK_DOCTORS];
-
-        if (debouncedSearch.trim()) {
-          const q = debouncedSearch.toLowerCase();
-          filtered = filtered.filter(
-            (d) =>
-              d.name.toLowerCase().includes(q) ||
-              d.specialty.toLowerCase().includes(q)
-          );
-        }
-
-        if (selectedSpecialty) {
-          filtered = filtered.filter(
-            (d) => d.specialtyId === selectedSpecialty
-          );
-        }
-
-        setDoctors(filtered);
+        if (!cancelled) setError("Unable to load doctor directory. Please try again later.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    };
-
+    }
     fetchDoctors();
-  }, [debouncedSearch, selectedSpecialty, useMock]);
+    return () => { cancelled = true; };
+  }, []);
 
-  const handleClearFilters = () => {
-    setSearchQuery("");
-    setSelectedSpecialty("");
-  };
+  useEffect(() => {
+    if (loading) return;
+
+    const query = searchQuery.trim();
+    let cancelled = false;
+
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      if (!query) {
+        setSearching(false);
+        setDoctors(allDoctors);
+        return;
+      }
+      setSearching(true);
+      setError(null);
+    });
+
+    if (!query) {
+      return () => { cancelled = true; };
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.get("/doctors", { params: { search: query } });
+        if (!cancelled) {
+          const data = res.data?.doctors || res.data?.data || res.data;
+          setDoctors(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (!cancelled) setError("Unable to complete your search. Please try again.");
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 400);
+
+    return () => { clearTimeout(timer); cancelled = true; };
+  }, [searchQuery, loading, allDoctors]);
 
   return (
     <>
       <Navbar />
       <div className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-6xl mx-auto space-y-8">
-          {/* Header */}
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/patient/dashboard" aria-label="Back to home page"
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-blue-500 px-3 py-2 
+              text-xs font-semibold transition text-white hover:bg-blue-700">
+              &larr; Back To Dashboard
+            </Link>
+          </div>
+
           <div className="space-y-3">
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
               Doctor Directory
             </h1>
             <p className="text-sm text-slate-500 max-w-xl">
-              Browse top-rated healthcare specialists and book consultations
-              instantly.
+              Browse top-rated healthcare specialists and book consultations instantly.
             </p>
-            {useMock && (
-              <p className="text-xs text-amber-600 bg-amber-50 inline-block px-3 py-1 rounded-full">
-                Using temporary mock data (APIs not ready yet)
-              </p>
-            )}
           </div>
 
-          {/* Search + Filter Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search doctors by name or specialty..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-
-              <select
-                value={selectedSpecialty}
-                onChange={(e) => setSelectedSpecialty(e.target.value)}
-                disabled={specialtiesLoading}
-                className="bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-45"
-              >
-                <option value="">All Specialties</option>
-                {specialties.map((spec) => (
-                  <option key={spec.id} value={spec.id}>
-                    {spec.name}
-                  </option>
-                ))}
-              </select>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search doctors by name or specialty..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                disabled={loading}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl pl-10 pr-10 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
+              />
+              {searching && (
+                <Loader2 className="absolute right-3.5 top-1/2 size-4 -translate-y-1/2 animate-spin text-blue-600" />
+              )}
             </div>
           </div>
 
-          {/* Doctors Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <DoctorSkeleton key={i} />
-              ))
-            ) : doctors.length === 0 ? (
-              <EmptyDoctors onClearFilters={handleClearFilters} />
-            ) : (
-              doctors.map((doctor) => (
-                <DoctorCard key={doctor.id} doctor={doctor} />
-              ))
-            )}
-          </div>
+          {loading ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center gap-2 text-sm font-medium text-blue-600">
+                <Loader2 className="size-4 animate-spin" /> Loading doctors...
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <DoctorCardSkeleton key={i} />
+                ))}
+              </div>
+            </div>
+          ) : searching ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center gap-2 text-sm font-medium text-blue-600">
+                <Loader2 className="size-4 animate-spin" /> Searching doctors for &quot;{searchQuery}&quot;...
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <DoctorCardSkeleton key={i} />
+                ))}
+              </div>
+            </div>
+          ) : error ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Something went wrong</h2>
+              <p className="mt-2 text-sm text-slate-500">{error}</p>
+            </div>
+          ) : doctors.length === 0 ? (
+            <EmptyState
+              title="No doctors found"
+              message={searchQuery
+                ? "Try a different name or specialty to explore available care options."
+                : "No doctors are available at the moment. Please check back later."}
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {doctors.map((doc) => (
+                <div key={doc.id} className="bg-white rounded-2xl border border-slate-200/80 p-6 flex flex-col justify-between space-y-4">
+                  <div className="flex items-start gap-4">
+                    <img src={doc.avatar} alt={doc.name} className="w-16 h-16 rounded-2xl object-cover" />
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">{doc.name}</h3>
+                      <p className="text-xs font-semibold text-blue-600">{doc.specialty}</p>
+                      <p className="text-xs text-slate-400">{doc.experience}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                    <Link
+                      href={`/doctors/${doc.id}`}
+                      className={cn(buttonVariants({ variant: "secondary", className: "flex-1 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs" }))}
+                    >
+                      View Profile
+                    </Link>
+                    <Link
+                      href={`/appointment/book?doctor=${encodeURIComponent(doc.name)}&specialty=${encodeURIComponent(doc.specialty)}`}
+                      className={cn(buttonVariants({ variant: "default", className: "flex-1 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs" }))}
+                    >
+                      Book Visit
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </>
