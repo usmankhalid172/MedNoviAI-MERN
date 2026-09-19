@@ -6,197 +6,161 @@ import DoctorCard from "@/components/doctors/DoctorCard";
 import DoctorSkeleton from "@/components/doctors/DoctorSkeleton";
 import EmptyDoctors from "@/components/doctors/EmptyDoctors";
 import { useDebounce } from "@/hooks/useDebounce";
-import api from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import { Doctor, Specialty } from "@/types/doctor";
-import { Search } from "lucide-react";
+import { Search, RefreshCw } from "lucide-react";
 
-// Temporary mock data (remove later when real APIs are ready)
-const MOCK_SPECIALTIES: Specialty[] = [
-  { id: "1", name: "Cardiology" },
-  { id: "2", name: "Neurology" },
-  { id: "3", name: "Pediatrics" },
-  { id: "4", name: "Dermatology" },
-  { id: "5", name: "Orthopedics" },
-  { id: "6", name: "General Physician" },
-];
+type DoctorRow = {
+  id: string;
+  full_name: string;
+  experience_years: number | null;
+  rating: number | null;
+  reviews_count: number | null;
+  avatar_url: string | null;
+  consultation_fee: number | null;
+  specialty_id: string;
+  specialties: { name: string } | { name: string }[] | null;
+};
 
-const MOCK_DOCTORS: Doctor[] = [
-  {
-    id: "doc-1",
-    name: "Dr. Sarah Jenkins",
-    specialty: "Cardiology",
-    specialtyId: "1",
-    experience: "12 Yrs Exp",
-    rating: 4.9,
-    reviewsCount: 124,
-    avatar:
-      "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-2",
-    name: "Dr. Michael Chen",
-    specialty: "Neurology",
-    specialtyId: "2",
-    experience: "9 Yrs Exp",
-    rating: 4.8,
-    reviewsCount: 98,
-    avatar:
-      "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-3",
-    name: "Dr. Emily Watson",
-    specialty: "Pediatrics",
-    specialtyId: "3",
-    experience: "15 Yrs Exp",
-    rating: 4.9,
-    reviewsCount: 210,
-    avatar:
-      "https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-4",
-    name: "Dr. James Wilson",
-    specialty: "Dermatology",
-    specialtyId: "4",
-    experience: "8 Yrs Exp",
-    rating: 4.7,
-    reviewsCount: 76,
-    avatar:
-      "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-5",
-    name: "Dr. Ayesha Khan",
-    specialty: "Orthopedics",
-    specialtyId: "5",
-    experience: "11 Yrs Exp",
-    rating: 4.8,
-    reviewsCount: 142,
-    avatar:
-      "https://images.unsplash.com/photo-1651008376811-b90baee60c1f?w=150&auto=format&fit=crop&q=80",
-  },
-  {
-    id: "doc-6",
-    name: "Dr. Robert Lee",
-    specialty: "General Physician",
-    specialtyId: "6",
-    experience: "14 Yrs Exp",
-    rating: 4.6,
-    reviewsCount: 189,
-    avatar:
-      "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=150&auto=format&fit=crop&q=80",
-  },
-];
+function getSpecialtyName(row: DoctorRow): string {
+  const rel = row.specialties;
+  if (!rel) return "General";
+  if (Array.isArray(rel)) return rel[0]?.name ?? "General";
+  return rel.name ?? "General";
+}
 
 export default function DoctorDirectoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSpecialty, setSelectedSpecialty] = useState("");
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [specialtiesLoading, setSpecialtiesLoading] = useState(true);
-  const [useMock, setUseMock] = useState(false);
+  const [doctorsError, setDoctorsError] = useState(false);
+  const [specialtiesError, setSpecialtiesError] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
 
   // Load specialties
   useEffect(() => {
-    const fetchSpecialties = async () => {
+    let isMounted = true;
+
+    const loadSpecialties = async () => {
       try {
         setSpecialtiesLoading(true);
-        const res = await api.get("/api/specialties");
-        const data = res.data?.data || res.data || [];
-        setSpecialties(
-          Array.isArray(data) && data.length > 0 ? data : MOCK_SPECIALTIES
-        );
-        setUseMock(false);
-      } catch {
-        console.warn("Specialties API not available, using mock data");
-        setSpecialties(MOCK_SPECIALTIES);
-        setUseMock(true);
+        setSpecialtiesError(false);
+
+        const { data, error } = await supabase
+          .from("specialties")
+          .select("id, name")
+          .order("name");
+
+        if (error) throw error;
+        if (isMounted) setSpecialties(data ?? []);
+      } catch (error) {
+        console.error("Error fetching specialties:", error);
+        if (isMounted) {
+          setSpecialties([]);
+          setSpecialtiesError(true);
+        }
       } finally {
-        setSpecialtiesLoading(false);
+        if (isMounted) setSpecialtiesLoading(false);
       }
     };
 
-    fetchSpecialties();
+    loadSpecialties();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // Load / filter doctors
+  // Load doctors
   useEffect(() => {
-    const fetchDoctors = async () => {
+    let isMounted = true;
+
+    const loadDoctors = async () => {
       try {
         setLoading(true);
+        setDoctorsError(false);
 
-        // Try real API first
-        if (!useMock) {
-          const params: Record<string, string> = {};
-          if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
-          if (selectedSpecialty) params.specialty = selectedSpecialty;
-
-          const res = await api.get("/api/doctors", { params });
-          const data = res.data?.data || res.data || [];
-
-          if (Array.isArray(data) && data.length > 0) {
-            setDoctors(data);
-            setLoading(false);
-            return;
-          }
-        }
-
-        // Fallback to mock filtering
-        let filtered = [...MOCK_DOCTORS];
-
-        if (debouncedSearch.trim()) {
-          const q = debouncedSearch.toLowerCase();
-          filtered = filtered.filter(
-            (d) =>
-              d.name.toLowerCase().includes(q) ||
-              d.specialty.toLowerCase().includes(q)
-          );
-        }
+        let query = supabase
+          .from("doctors")
+          .select(
+            `
+            id,
+            full_name,
+            experience_years,
+            rating,
+            reviews_count,
+            avatar_url,
+            consultation_fee,
+            specialty_id,
+            specialties ( name )
+          `
+          )
+          .eq("is_available", true);
 
         if (selectedSpecialty) {
-          filtered = filtered.filter(
-            (d) => d.specialtyId === selectedSpecialty
-          );
+          query = query.eq("specialty_id", selectedSpecialty);
         }
-
-        setDoctors(filtered);
-      } catch {
-        console.warn("Doctors API not available, using mock data");
-        setUseMock(true);
-
-        let filtered = [...MOCK_DOCTORS];
 
         if (debouncedSearch.trim()) {
-          const q = debouncedSearch.toLowerCase();
-          filtered = filtered.filter(
-            (d) =>
-              d.name.toLowerCase().includes(q) ||
-              d.specialty.toLowerCase().includes(q)
-          );
+          query = query.ilike("full_name", `%${debouncedSearch.trim()}%`);
         }
 
-        if (selectedSpecialty) {
-          filtered = filtered.filter(
-            (d) => d.specialtyId === selectedSpecialty
-          );
-        }
+        const { data, error } = await query.order("rating", {
+          ascending: false,
+        });
 
-        setDoctors(filtered);
+        if (error) throw error;
+
+        const rows = (data ?? []) as unknown as DoctorRow[];
+
+        const formattedDoctors: Doctor[] = rows.map((doc) => ({
+          id: doc.id,
+          name: doc.full_name,
+          specialty: getSpecialtyName(doc),
+          specialtyId: doc.specialty_id,
+          experience: `${doc.experience_years ?? 0} Yrs Exp`,
+          rating: Number(doc.rating) || 0,
+          reviewsCount: Number(doc.reviews_count) || 0,
+          avatar: doc.avatar_url || "https://via.placeholder.com/150",
+          consultationFee: doc.consultation_fee
+            ? `$${doc.consultation_fee}`
+            : undefined,
+        }));
+
+        if (isMounted) setDoctors(formattedDoctors);
+      } catch (error) {
+        console.error("Error fetching doctors:", error);
+        if (isMounted) {
+          setDoctors([]);
+          setDoctorsError(true);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
-    fetchDoctors();
-  }, [debouncedSearch, selectedSpecialty, useMock]);
+    loadDoctors();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [debouncedSearch, selectedSpecialty]);
 
   const handleClearFilters = () => {
     setSearchQuery("");
     setSelectedSpecialty("");
+  };
+
+  const handleRetryDoctors = () => {
+    setDoctorsError(false);
+    setLoading(true);
+    // Force re-fetch by updating a dependency
+    setSelectedSpecialty((prev) => prev);
   };
 
   return (
@@ -204,7 +168,6 @@ export default function DoctorDirectoryPage() {
       <Navbar />
       <div className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-6xl mx-auto space-y-8">
-          {/* Header */}
           <div className="space-y-3">
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
               Doctor Directory
@@ -213,14 +176,8 @@ export default function DoctorDirectoryPage() {
               Browse top-rated healthcare specialists and book consultations
               instantly.
             </p>
-            {useMock && (
-              <p className="text-xs text-amber-600 bg-amber-50 inline-block px-3 py-1 rounded-full">
-                Using temporary mock data (APIs not ready yet)
-              </p>
-            )}
           </div>
 
-          {/* Search + Filter Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
@@ -237,7 +194,7 @@ export default function DoctorDirectoryPage() {
               <select
                 value={selectedSpecialty}
                 onChange={(e) => setSelectedSpecialty(e.target.value)}
-                disabled={specialtiesLoading}
+                disabled={specialtiesLoading || specialtiesError}
                 className="bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-45"
               >
                 <option value="">All Specialties</option>
@@ -248,14 +205,32 @@ export default function DoctorDirectoryPage() {
                 ))}
               </select>
             </div>
+
+            {specialtiesError && (
+              <p className="text-xs text-red-500 mt-2">
+                Failed to load specialties
+              </p>
+            )}
           </div>
 
-          {/* Doctors Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {loading ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <DoctorSkeleton key={i} />
               ))
+            ) : doctorsError ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-16 text-center space-y-4">
+                <p className="text-slate-600 font-medium">
+                  Failed to load doctors
+                </p>
+                <button
+                  onClick={handleRetryDoctors}
+                  className="flex items-center gap-2 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-blue-700 transition"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Retry
+                </button>
+              </div>
             ) : doctors.length === 0 ? (
               <EmptyDoctors onClearFilters={handleClearFilters} />
             ) : (
