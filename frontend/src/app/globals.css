@@ -54,17 +54,52 @@ select {
 }
 
 @theme inline {
+  /* Core */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-geist-sans);
+
+  /* Brand */
   --color-brand-primary: var(--brand-primary);
   --color-brand-primary-hover: var(--brand-primary-hover);
+  --color-brand-primary-light: var(--brand-primary-light);
+  --color-brand-primary-dark: var(--brand-primary-dark);
   --color-brand-ink: var(--brand-ink);
+
+  /* Navy scale */
+  --color-navy-950: var(--navy-950);
+  --color-navy-900: var(--navy-900);
+  --color-navy-800: var(--navy-800);
+  --color-navy-700: var(--navy-700);
+  --color-navy-600: var(--navy-600);
+  --color-navy-500: var(--navy-500);
+  --color-navy-400: var(--navy-400);
+
+  /* Surfaces */
   --color-surface-soft: var(--surface-soft);
-  --color-border-subtle: var(--border-subtle);
+  --color-surface-card: var(--surface-card);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-page: var(--surface-page);
+
+  /* Text */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
   --color-text-subtle: var(--text-subtle);
+  --color-text-on-dark: var(--text-on-dark);
+  --color-text-on-dark-muted: var(--text-on-dark-muted);
+
+  /* Borders */
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-border-on-dark: var(--border-on-dark);
+
+  /* Semantic */
+  --color-success: var(--success);
+  --color-success-light: var(--success-light);
+  --color-warning: var(--warning);
+  --color-warning-light: var(--warning-light);
+
+  /* Existing shadcn mappings (keep) */
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -94,6 +129,8 @@ select {
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  /* Radius */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -101,15 +138,63 @@ select {
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Fonts – keep exactly as they currently are in the project */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
 }
 
 :root {
+  /* ========== BRAND / PRIMARY ========== */
   --brand-primary: #2563eb;
+  /* Main brand blue */
   --brand-primary-hover: #1d4ed8;
-  --brand-ink: #173b68;
+  --brand-primary-light: #3b82f6;
+  --brand-primary-dark: #1e40af;
+
+  /* ========== NAVY (for headers, sidebars, dark sections) ========== */
+  --navy-950: #0b1a33;
+  --navy-900: #102f5f;
+  /* Main dark navy used in landing + doctor profile */
+  --navy-800: #163e76;
+  --navy-700: #1e4f8d;
+  --navy-600: #244f87;
+  --navy-500: #3769a4;
+  --navy-400: #4b7db5;
+
+  /* ========== SURFACES ========== */
   --surface-soft: #f8fbff;
-  --border-subtle: #d5e2ef;
+  /* Very light blue-gray background */
+  --surface-card: #ffffff;
+  --surface-muted: #f1f5f9;
+  --surface-page: #f8fafc;
+
+  /* ========== TEXT ========== */
+  --brand-ink: #173b68;
+  /* Dark readable text */
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
   --text-subtle: #91a2b4;
+  --text-on-dark: #ffffff;
+  --text-on-dark-muted: #dbeafe;
+
+  /* ========== BORDERS ========== */
+  --border-subtle: #d5e2ef;
+  --border-default: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-on-dark: #3769a4;
+
+  /* ========== SEMANTIC ========== */
+  --success: #16a34a;
+  --success-light: #dcfce7;
+  --warning: #d97706;
+  --warning-light: #fef3c7;
+  --destructive: #ef4444;
+  --destructive-light: #fee2e2;
+
+  /* ========== SHADCN / EXISTING (keep for compatibility) ========== */
+  /* ========== SHADCN / EXISTING (keep for compatibility) ========== */
   --primary: 224 76% 48%;
   --secondary: 152 69% 39%;
   --accent: 262 67% 57%;
@@ -182,46 +267,48 @@ select {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
+
   html {
     @apply font-sans;
   }
 }
 
-.landing-page > section:nth-of-type(3),
-.landing-page > section:nth-of-type(5),
-.landing-page > section:nth-of-type(6) {
+.landing-page>section:nth-of-type(3),
+.landing-page>section:nth-of-type(5),
+.landing-page>section:nth-of-type(6) {
   background: #102f5f !important;
   border-color: #244f87 !important;
   color: #ffffff;
 }
 
-.landing-page > section:nth-of-type(4) {
+.landing-page>section:nth-of-type(4) {
   background: #123b6d !important;
   border-color: #244f87 !important;
   color: #ffffff;
 }
 
-.landing-page > section:nth-of-type(3) > p,
-.landing-page > section:nth-of-type(4) > p,
-.landing-page > section:nth-of-type(5) > p,
-.landing-page > section:nth-of-type(6) > p {
+.landing-page>section:nth-of-type(3)>p,
+.landing-page>section:nth-of-type(4)>p,
+.landing-page>section:nth-of-type(5)>p,
+.landing-page>section:nth-of-type(6)>p {
   color: #dbeafe !important;
 }
 
-.landing-page > section:nth-of-type(3) h2,
-.landing-page > section:nth-of-type(4) h2,
-.landing-page > section:nth-of-type(5) h2,
-.landing-page > section:nth-of-type(6) h2 {
+.landing-page>section:nth-of-type(3) h2,
+.landing-page>section:nth-of-type(4) h2,
+.landing-page>section:nth-of-type(5) h2,
+.landing-page>section:nth-of-type(6) h2 {
   color: #ffffff;
 }
 
-.landing-page > section:nth-of-type(3) h2 + p,
-.landing-page > section:nth-of-type(4) h2 + p,
-.landing-page > section:nth-of-type(5) h2 + p,
-.landing-page > section:nth-of-type(6) h2 + p {
+.landing-page>section:nth-of-type(3) h2+p,
+.landing-page>section:nth-of-type(4) h2+p,
+.landing-page>section:nth-of-type(5) h2+p,
+.landing-page>section:nth-of-type(6) h2+p {
   color: #bfdbfe;
 }
 
@@ -245,21 +332,21 @@ select {
   background: #102f5f;
 }
 
-.landing-page > section {
+.landing-page>section {
   background: #102f5f !important;
   border-color: #244f87 !important;
   color: #ffffff;
 }
 
-.landing-page > section:first-of-type {
+.landing-page>section:first-of-type {
   background: #102f5f !important;
 }
 
-.landing-page > section > div:not(.absolute),
-.landing-page > section .bg-white,
-.landing-page > section .bg-\[\#fdfdfc\],
-.landing-page > section .bg-\[\#f8fbff\],
-.landing-page > section .bg-\[\#f4f9ff\] {
+.landing-page>section>div:not(.absolute),
+.landing-page>section .bg-white,
+.landing-page>section .bg-\[\#fdfdfc\],
+.landing-page>section .bg-\[\#f8fbff\],
+.landing-page>section .bg-\[\#f4f9ff\] {
   background-color: #102f5f !important;
 }
 
@@ -298,15 +385,15 @@ select {
   background-color: #1e4f8d !important;
 }
 
-.landing-page > section .rounded-xl,
-.landing-page > section .rounded-2xl {
+.landing-page>section .rounded-xl,
+.landing-page>section .rounded-2xl {
   background: #163e76 !important;
   background-image: none !important;
   border-color: #3769a4 !important;
 }
 
-.landing-page > section .rounded-xl p,
-.landing-page > section .rounded-2xl p {
+.landing-page>section .rounded-xl p,
+.landing-page>section .rounded-2xl p {
   color: #dbeafe;
 }
 
@@ -325,24 +412,24 @@ select {
   color: #ffffff;
 }
 
-.landing-page > section:nth-of-type(6) svg {
+.landing-page>section:nth-of-type(6) svg {
   color: #facc15 !important;
   fill: #facc15;
 }
 
-.landing-page > section:nth-of-type(4) .group:nth-child(1) > div:first-child > div:first-child {
+.landing-page>section:nth-of-type(4) .group:nth-child(1)>div:first-child>div:first-child {
   background-image: url("https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=900&q=90") !important;
 }
 
-.landing-page > section:nth-of-type(4) .group:nth-child(2) > div:first-child > div:first-child {
+.landing-page>section:nth-of-type(4) .group:nth-child(2)>div:first-child>div:first-child {
   background-image: url("https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=85") !important;
 }
 
-.landing-page > section:nth-of-type(4) .group:nth-child(3) > div:first-child > div:first-child {
+.landing-page>section:nth-of-type(4) .group:nth-child(3)>div:first-child>div:first-child {
   background-image: url("https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=900&q=85") !important;
 }
 
-.landing-page > section:nth-of-type(4) .group > div:last-child {
+.landing-page>section:nth-of-type(4) .group>div:last-child {
   display: none;
 }
 
