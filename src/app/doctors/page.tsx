@@ -9,7 +9,8 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { supabase } from "@/lib/supabase";
 import { Doctor, Specialty } from "@/types/doctor";
 import { Search, RefreshCw } from "lucide-react";
-import Link from "next/link"; 
+import Link from "next/link";
+import { useAuth } from "@/hooks/useAuth"; 
 
 type DoctorRow = {
   id: string;
@@ -31,6 +32,10 @@ function getSpecialtyName(row: DoctorRow): string {
 }
 
 export default function DoctorDirectoryPage() {
+  const { user } = useAuth();
+
+  const dashboardHref = user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard";
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSpecialty, setSelectedSpecialty] = useState("");
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
@@ -166,9 +171,10 @@ export default function DoctorDirectoryPage() {
       <Navbar />
       <div className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-6xl mx-auto space-y-8">
-          <Link href="/patient/dashboard" aria-label="Back to home" className="inline-flex h-10 w-40 shrink-0
-            items-center justify-center rounded-lg bg-blue-500 text-slate-200 transition-colors
-            hover:bg-blue-700 hover:text-white"> &larr; Go to Dashboard
+          <Link href={dashboardHref} aria-label="Back to your dashboard" className="inline-flex h-10 items-center
+            justify-center gap-2 rounded-lg bg-blue-500 text-slate-200 transition-colors
+            hover:bg-blue-700 hover:text-white px-4">
+            <span aria-hidden="true">&larr;</span> Go to Dashboard
           </Link>
           <div className="space-y-3">
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">

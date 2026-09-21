@@ -11,6 +11,20 @@ import {
 import type { LucideProps } from "lucide-react";
 import type { ComponentType } from "react";
 
+/**
+ * Central icon registry for the app.
+ *
+ * Icon sizes are standardized in 3 steps to keep UI consistent:
+ *  - xs: size-3.5 (14px)  → inline/badge icons
+ *  - sm: size-4   (16px)  → most UI icons, button icons
+ *  - md: size-5   (20px)  → headings/section icons
+ *  - lg: size-6+          → standalone feature icons
+ *
+ * Usage:
+ *   <AppIcon name="calendar" size="sm" className="text-blue-600" />
+ * or pass any Lucide icon directly: <IconCalendar className="size-4" />
+ */
+
 export type AppIconName =
   | "calendar"
   | "clock"

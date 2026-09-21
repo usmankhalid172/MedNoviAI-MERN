@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { saveToken } from "@/lib/auth";
 
 type AuthMode = "signin" | "signup";
 type Role = "patient" | "doctor";
@@ -25,7 +26,6 @@ interface AuthFormProps {
 }
 
 const USERS_KEY = "mednovi_local_users";
-const SESSION_KEY = "mednovi_current_user";
 
 interface LocalUser {
   id: string;
@@ -57,11 +57,6 @@ function saveStoredUsers(users: Record<string, LocalUser>) {
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
 }
 
-function getStoredUser(email: string) {
-  const normalizedEmail = normalizeEmail(email);
-  return getStoredUsers()[normalizedEmail];
-}
-
 function createLocalUserId() {
   if (
     typeof crypto !== "undefined" &&
@@ -73,8 +68,34 @@ function createLocalUserId() {
   return `user-${Date.now()}`;
 }
 
-function saveCurrentUser(user: LocalUser) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+function base64Encode(value: string) {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function createLocalToken(user: {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+}) {
+  const header = base64Encode(
+    JSON.stringify({
+      alg: "HS256",
+      typ: "JWT",
+    })
+  );
+
+  const payload = base64Encode(
+    JSON.stringify({
+      sub: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      iat: Math.floor(Date.now() / 1000),
+    })
+  );
+
+  return `${header}.${payload}.local-signature`;
 }
 
 export default function AuthForm({ mode }: AuthFormProps) {
@@ -96,14 +117,6 @@ export default function AuthForm({ mode }: AuthFormProps) {
   } | null>(null);
 
   const isSignUp = mode === "signup";
-
-  const handleRoleRedirect = (userRole: Role) => {
-    if (userRole === "doctor") {
-      router.push("/doctor/dashboard");
-    } else {
-      router.push("/patient/dashboard");
-    }
-  };
 
   const showSuccessToastAndNavigate = (
     message: string,
@@ -159,26 +172,13 @@ export default function AuthForm({ mode }: AuthFormProps) {
      * SIGNUP
      */
     if (isSignUp) {
-      console.log("SIGNUP ATTEMPT:", {
-        email: normalizedEmail,
-        selectedRole: role,
-        existingUser: existingUser || null,
-        existingUserRole: existingUser?.role || null,
-      });
-
       /*
        * If the email already exists:
        * - Different role = error (incorrect role for this email)
        * - Same role = account already exists
        */
       if (existingUser) {
-        console.log("USER EXISTS! Checking role...");
-        console.log("Existing role:", existingUser.role);
-        console.log("Selected role:", role);
-        console.log("Roles match?", existingUser.role === role);
-
         if (existingUser.role !== role) {
-          console.log("ROLE MISMATCH DETECTED!");
           showErrorToast(
             "You have selected an incorrect role for this email."
           );
@@ -187,7 +187,6 @@ export default function AuthForm({ mode }: AuthFormProps) {
           return;
         }
 
-        console.log("Same role - account already exists");
         showErrorToast(
           "An account with this email already exists."
         );
@@ -195,8 +194,6 @@ export default function AuthForm({ mode }: AuthFormProps) {
         setIsSubmitting(false);
         return;
       }
-
-      console.log("New user - creating account");
 
       const fullName = name.trim();
 
@@ -213,8 +210,6 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
       users[normalizedEmail] = newUser;
       saveStoredUsers(users);
-
-      console.log("User saved! localStorage now contains:", users);
 
       showSuccessToastAndNavigate("Registration successful!", () =>
         router.push("/login")
@@ -242,13 +237,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
     }
 
     /*
-     * NEW: Validate selected role matches stored user's role
+     * Validate selected role matches stored user's role
      */
     if (existingUser.role !== role) {
-      console.log("LOGIN ROLE MISMATCH!");
-      console.log("Stored role:", existingUser.role);
-      console.log("Selected role:", role);
-      
       showErrorToast(
         "You have selected an incorrect role for this email."
       );
@@ -270,7 +261,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
       }),
     };
 
-    saveCurrentUser(loggedInUser);
+    saveToken(createLocalToken(loggedInUser));
 
     login(loggedInUser);
 
