@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import PageLayout from "@/components/shared/PageLayout";
 import LoadingSpinner from "@/components/shared/LoadingSpinner";
 import EmptyState from "@/components/shared/EmptyState";
+import Footer from "@/components/shared/Footer";
 import api from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -218,7 +219,6 @@ export default function DoctorAppointmentsPage() {
   return (
     <PageLayout>
       <div className="my-6 space-y-6">
-        {/* Page Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">
             Doctor Appointments
@@ -376,6 +376,7 @@ export default function DoctorAppointmentsPage() {
           </div>
         )}
       </div>
+      <Footer />
     </PageLayout>
   );
 }
