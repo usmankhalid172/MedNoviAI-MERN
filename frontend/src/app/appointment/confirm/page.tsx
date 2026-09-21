@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import api from "@/lib/api";
+import Footer from "@/components/shared/Footer";
 
 interface Appointment {
   id: string;
@@ -389,6 +390,7 @@ export default function AppointmentConfirmationPage() {
       >
         <ConfirmationContent />
       </Suspense>
+      <Footer />
     </div>
   );
 }

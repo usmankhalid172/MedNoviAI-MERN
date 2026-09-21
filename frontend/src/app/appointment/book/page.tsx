@@ -7,6 +7,7 @@ import Navbar from "@/components/shared/Navbar";
 import { EmptyState } from "@/components/shared/EmptyState";
 import api from "@/lib/api";
 import { ChevronRight, Loader2 } from "lucide-react";
+import Footer from "@/components/shared/Footer";
 
 interface Doctor {
   id: string;
@@ -443,6 +444,7 @@ export default function BookAppointmentPage() {
           </div>
         </div>
       </div>
+      <Footer />
     </>
   );
 }

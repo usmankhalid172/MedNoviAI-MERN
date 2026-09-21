@@ -9,6 +9,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { supabase } from "@/lib/supabase";
 import { Doctor, Specialty } from "@/types/doctor";
 import { Search, RefreshCw } from "lucide-react";
+import Link from "next/link"; 
 
 type DoctorRow = {
   id: string;
@@ -76,10 +77,8 @@ export default function DoctorDirectoryPage() {
     };
   }, []);
 
-  // Load doctors
   useEffect(() => {
     let isMounted = true;
-
     const loadDoctors = async () => {
       try {
         setLoading(true);
@@ -167,6 +166,10 @@ export default function DoctorDirectoryPage() {
       <Navbar />
       <div className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-6xl mx-auto space-y-8">
+          <Link href="/patient/dashboard" aria-label="Back to home" className="inline-flex h-10 w-40 shrink-0
+            items-center justify-center rounded-lg bg-blue-500 text-slate-200 transition-colors
+            hover:bg-blue-700 hover:text-white"> &larr; Go to Dashboard
+          </Link>
           <div className="space-y-3">
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
               Doctor Directory

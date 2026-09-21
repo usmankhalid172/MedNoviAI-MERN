@@ -10,7 +10,8 @@ interface DoctorCardProps {
 
 export default function DoctorCard({ doctor }: DoctorCardProps) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 p-6 flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-2xl border border-slate-200/80 p-6 flex flex-col justify-between 
+      space-y-4 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start gap-4">
         <img
           src={doctor.avatar || "https://via.placeholder.com/150"}

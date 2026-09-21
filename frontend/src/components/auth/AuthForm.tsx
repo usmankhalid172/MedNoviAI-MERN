@@ -13,9 +13,8 @@ import {
   Loader2,
   ShieldCheck,
   Stethoscope,
+  XCircle,
 } from "lucide-react";
-import api from "@/lib/api";
-import { saveToken } from "@/lib/auth";
 import { useAuth } from "@/hooks/useAuth";
 
 type AuthMode = "signin" | "signup";
@@ -25,118 +24,57 @@ interface AuthFormProps {
   mode: AuthMode;
 }
 
-function getErrorMessage(error: unknown) {
-  const responseMessage = (
-    error as {
-      response?: {
-        data?: {
-          message?: string;
-          error?: string;
-        };
-      };
-    }
-  )?.response?.data;
+const USERS_KEY = "mednovi_local_users";
+const SESSION_KEY = "mednovi_current_user";
 
-  return (
-    responseMessage?.message ||
-    responseMessage?.error ||
-    "Something went wrong. Please try again."
-  );
-}
-
-function isNetworkError(error: unknown) {
-  return error instanceof Error && !("response" in error);
-}
-
-function base64Encode(value: string) {
-  const ascii = unescape(encodeURIComponent(value));
-
-  return typeof btoa === "function"
-    ? btoa(ascii)
-    : Buffer.from(value, "utf-8").toString("base64");
-}
-
-function createLocalToken(user: {
+interface LocalUser {
   id: string;
   name: string;
   email: string;
-  role: string;
-}) {
-  const header = base64Encode(
-    JSON.stringify({
-      alg: "HS256",
-      typ: "JWT",
-    })
-  );
-
-  const payload = base64Encode(
-    JSON.stringify({
-      sub: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      iat: Math.floor(Date.now() / 1000),
-    })
-  );
-
-  return `${header}.${payload}.local-signature`;
+  password: string;
+  role: Role;
+  specialty?: string;
 }
 
-function createLocalUserId() {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `user-${Date.now()}`;
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
 }
 
-const LOCAL_NAME_OVERRIDES: Record<string, string> = {
-  "zehabfaisal1234@gmail.com": "Zehab Faisal",
-};
-
-const USERS_KEY = "mednovi_local_users";
-
-function getStoredLocalUsers(): Record<
-  string,
-  { name: string; role: string }
-> {
-  if (typeof window === "undefined") return {};
+function getStoredUsers(): Record<string, LocalUser> {
+  if (typeof window === "undefined") {
+    return {};
+  }
 
   try {
-    return JSON.parse(localStorage.getItem(USERS_KEY) || "{}");
+    const storedUsers = localStorage.getItem(USERS_KEY);
+    return storedUsers ? JSON.parse(storedUsers) : {};
   } catch {
     return {};
   }
 }
 
-function storeLocalUser(
-  email: string,
-  record: { name: string; role: string }
-) {
-  const users = getStoredLocalUsers();
-
-  users[email.toLowerCase().trim()] = record;
-
+function saveStoredUsers(users: Record<string, LocalUser>) {
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
 }
 
-function getStoredUserName(email: string) {
-  return getStoredLocalUsers()[email.toLowerCase().trim()]?.name;
+function getStoredUser(email: string) {
+  const normalizedEmail = normalizeEmail(email);
+  return getStoredUsers()[normalizedEmail];
 }
 
-function prettifyNameFromEmail(email: string) {
-  const local = email
-    .split("@")[0]
-    .replace(/[._-]+/g, " ")
-    .replace(/\d+/g, " ")
-    .trim();
+function createLocalUserId() {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
 
-  const words = local
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(
-      (word) => word.charAt(0).toUpperCase() + word.slice(1)
-    );
+  return `user-${Date.now()}`;
+}
 
-  return words.join(" ") || local;
+function saveCurrentUser(user: LocalUser) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
 }
 
 export default function AuthForm({ mode }: AuthFormProps) {
@@ -152,7 +90,10 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{
+    text: string;
+    type: "success" | "error";
+  } | null>(null);
 
   const isSignUp = mode === "signup";
 
@@ -168,11 +109,15 @@ export default function AuthForm({ mode }: AuthFormProps) {
     message: string,
     navigate: () => void
   ) => {
-    setToastMessage(message);
+    setToastMessage({ text: message, type: "success" });
 
     window.setTimeout(() => {
       navigate();
     }, 1200);
+  };
+
+  const showErrorToast = (message: string) => {
+    setToastMessage({ text: message, type: "error" });
   };
 
   useEffect(() => {
@@ -180,211 +125,186 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
     const timer = window.setTimeout(() => {
       setToastMessage(null);
-    }, 2500);
+    }, 3000);
 
     return () => window.clearTimeout(timer);
   }, [toastMessage]);
 
-  const handleSubmit = async (
-    event: React.FormEvent<HTMLFormElement>
-  ) => {
-    event.preventDefault();
+  const handleSubmit = (
+  event: React.FormEvent<HTMLFormElement>
+) => {
+  event.preventDefault();
 
-    setErrorMessage("");
+  setErrorMessage("");
 
-    if (isSignUp && password !== confirmPassword) {
-      setErrorMessage("Passwords do not match.");
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedEmail) {
+    setErrorMessage("Please enter your email address.");
+    return;
+  }
+
+  if (isSignUp && password !== confirmPassword) {
+    setErrorMessage("Passwords do not match.");
+    return;
+  }
+
+  setIsSubmitting(true);
+
+  try {
+    const users = getStoredUsers();
+    const existingUser = users[normalizedEmail];
+
+    /*
+     * SIGNUP
+     */
+    if (isSignUp) {
+      console.log("SIGNUP ATTEMPT:", {
+        email: normalizedEmail,
+        selectedRole: role,
+        existingUser: existingUser || null,
+        existingUserRole: existingUser?.role || null,
+      });
+
+      /*
+       * If the email already exists:
+       * - Different role = error (incorrect role for this email)
+       * - Same role = account already exists
+       */
+      if (existingUser) {
+        console.log("USER EXISTS! Checking role...");
+        console.log("Existing role:", existingUser.role);
+        console.log("Selected role:", role);
+        console.log("Roles match?", existingUser.role === role);
+
+        if (existingUser.role !== role) {
+          console.log("ROLE MISMATCH DETECTED!");
+          showErrorToast(
+            "You have selected an incorrect role for this email."
+          );
+
+          setIsSubmitting(false);
+          return;
+        }
+
+        console.log("Same role - account already exists");
+        showErrorToast(
+          "An account with this email already exists."
+        );
+
+        setIsSubmitting(false);
+        return;
+      }
+
+      console.log("New user - creating account");
+
+      const fullName = name.trim();
+
+      const newUser: LocalUser = {
+        id: createLocalUserId(),
+        name: fullName,
+        email: normalizedEmail,
+        password,
+        role,
+        ...(role === "doctor" && {
+          specialty: specialty.trim(),
+        }),
+      };
+
+      users[normalizedEmail] = newUser;
+      saveStoredUsers(users);
+
+      console.log("User saved! localStorage now contains:", users);
+
+      showSuccessToastAndNavigate("Registration successful!", () =>
+        router.push("/login")
+      );
+
       return;
     }
 
-    setIsSubmitting(true);
-
-    try {
-      // Local/demo fallback
-      if (!process.env.NEXT_PUBLIC_API_URL) {
-        if (isSignUp) {
-          const trimmedName = name.trim();
-
-          storeLocalUser(email, {
-            name: trimmedName,
-            role,
-          });
-
-          showSuccessToastAndNavigate(
-            "User's registration is successful!",
-            () => router.push("/login")
-          );
-
-          return;
-        }
-
-        const localUserName =
-          LOCAL_NAME_OVERRIDES[email.toLowerCase().trim()] ||
-          getStoredUserName(email) ||
-          prettifyNameFromEmail(email) ||
-          "Demo User";
-
-        const localUser = {
-          id: createLocalUserId(),
-          name: localUserName,
-          email,
-          role,
-        };
-
-        const localToken = createLocalToken(localUser);
-
-        saveToken(localToken);
-        login(localUser);
-
-        showSuccessToastAndNavigate(
-          "User's login has been successful!",
-          () => handleRoleRedirect(role)
-        );
-
-        return;
-      }
-
-      // Backend API endpoints
-      const endpoint = isSignUp
-        ? "/api/Auth/register"
-        : "/api/Auth/login";
-
-      const payload = isSignUp
-        ? {
-            email,
-            password,
-            firstName: name.split(" ")[0],
-            lastName:
-              name.split(" ").slice(1).join(" ") || "User",
-            phoneNumber: "03000000000",
-          }
-        : {
-            email,
-            password,
-          };
-
-      console.log("LOGIN REQUEST:", {
-        endpoint,
-        payload: {
-          email: payload.email,
-          password: payload.password,
-        },
-      });
-
-      const response = await api.post(endpoint, payload);
-
-      console.log("LOGIN RESPONSE:", response.data);
-
-      const authData = response.data?.data;
-
-      // Registration succeeds → send user to login.
-      if (isSignUp) {
-        showSuccessToastAndNavigate(
-          "User's registration is successful!",
-          () => router.push("/login")
-        );
-
-        return;
-      }
-
-      const token =
-        authData?.token ||
-        response.data?.token ||
-        response.data?.accessToken;
-
-      if (!token) {
-        throw new Error(
-          "The server did not return an authentication token."
-        );
-      }
-
-      const user = authData?.user || response.data?.user;
-
-      const rawRole =
-        authData?.role ||
-        user?.role ||
-        role;
-
-      const userRole = rawRole.toLowerCase() as Role;
-
-      const userName = user
-        ? `${user.firstName || ""} ${user.lastName || ""}`.trim()
-        : authData?.fullName || name;
-
-      const userId = user?.id || user?._id;
-
-      saveToken(token);
-
-      login({
-        id: userId,
-        name: userName,
-        email: user?.email || authData?.email || email,
-        role: userRole,
-      });
-
-      showSuccessToastAndNavigate(
-        "User's login has been successful!",
-        () => handleRoleRedirect(userRole)
+    /*
+     * LOGIN
+     */
+    if (!existingUser) {
+      showErrorToast(
+        "No account exists with this email. Please create an account first."
       );
-    } catch (error) {
-      console.error("LOGIN ERROR:", error);
 
-      if (isNetworkError(error)) {
-        const trimmedName = name.trim();
-
-        if (isSignUp && trimmedName) {
-          storeLocalUser(email, {
-            name: trimmedName,
-            role,
-          });
-
-          showSuccessToastAndNavigate(
-            "User's registration is successful!",
-            () => router.push("/login")
-          );
-
-          return;
-        }
-
-        const localUserName =
-          trimmedName ||
-          LOCAL_NAME_OVERRIDES[email.toLowerCase().trim()] ||
-          getStoredUserName(email) ||
-          prettifyNameFromEmail(email) ||
-          "Demo User";
-
-        const localUser = {
-          id: createLocalUserId(),
-          name: localUserName,
-          email,
-          role,
-        };
-
-        const localToken = createLocalToken(localUser);
-
-        saveToken(localToken);
-        login(localUser);
-
-        showSuccessToastAndNavigate(
-          "User's login has been successful!",
-          () => handleRoleRedirect(role)
-        );
-
-        return;
-      }
-
-      setErrorMessage(getErrorMessage(error));
-    } finally {
       setIsSubmitting(false);
+      return;
     }
-  };
 
+    if (existingUser.password !== password) {
+      showErrorToast("Incorrect password.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    /*
+     * NEW: Validate selected role matches stored user's role
+     */
+    if (existingUser.role !== role) {
+      console.log("LOGIN ROLE MISMATCH!");
+      console.log("Stored role:", existingUser.role);
+      console.log("Selected role:", role);
+      
+      showErrorToast(
+        "You have selected an incorrect role for this email."
+      );
+
+      setIsSubmitting(false);
+      return;
+    }
+
+    /*
+     * Role matches - proceed with login
+     */
+    const loggedInUser = {
+      id: existingUser.id,
+      name: existingUser.name,
+      email: existingUser.email,
+      role: existingUser.role,
+      ...(existingUser.specialty && {
+        specialty: existingUser.specialty,
+      }),
+    };
+
+    saveCurrentUser(loggedInUser);
+
+    login(loggedInUser);
+
+    showSuccessToastAndNavigate("Login successful!", () => {
+      if (existingUser.role === "doctor") {
+        router.push("/doctor/dashboard");
+      } else {
+        router.push("/patient/dashboard");
+      }
+    });
+  } catch (error) {
+    console.error("Error during auth:", error);
+    showErrorToast("An unexpected error occurred. Please try again.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#102f5f] px-4 py-8 sm:px-6">
+      {/* Toast Notifications */}
       {toastMessage && (
-        <div className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-black/20 animate-in fade-in slide-in-from-top-2">
-          <CheckCircle2 className="size-4 shrink-0" />
-          <span>{toastMessage}</span>
+        <div
+          className={`fixed right-4 top-4 z-50 flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-black/20 animate-in fade-in slide-in-from-top-2 ${
+            toastMessage.type === "success"
+              ? "bg-green-600"
+              : "bg-red-600"
+          }`}
+        >
+          {toastMessage.type === "success" ? (
+            <CheckCircle2 className="size-4 shrink-0" />
+          ) : (
+            <XCircle className="size-4 shrink-0" />
+          )}
+          <span>{toastMessage.text}</span>
         </div>
       )}
 
@@ -482,9 +402,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                           : "border-[#d5e2ef] bg-white text-[#718399] hover:border-[#93b9e9]"
                       }`}
                     >
-                      <span className="block">
-                        {option}
-                      </span>
+                      <span className="block">{option}</span>
 
                       <span className="mt-1 block text-[11px] font-normal opacity-75">
                         {option === "patient"
@@ -510,9 +428,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                   id="name"
                   required
                   value={name}
-                  onChange={(event) =>
-                    setName(event.target.value)
-                  }
+                  onChange={(event) => setName(event.target.value)}
                   placeholder="Enter your full name"
                   className="auth-input"
                 />
@@ -532,9 +448,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                   id="specialty"
                   required
                   value={specialty}
-                  onChange={(event) =>
-                    setSpecialty(event.target.value)
-                  }
+                  onChange={(event) => setSpecialty(event.target.value)}
                   placeholder="e.g. Cardiologist"
                   className="auth-input"
                 />
@@ -554,9 +468,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 type="email"
                 required
                 value={email}
-                onChange={(event) =>
-                  setEmail(event.target.value)
-                }
+                onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@example.com"
                 className="auth-input"
               />
@@ -573,29 +485,21 @@ export default function AuthForm({ mode }: AuthFormProps) {
               <div className="relative">
                 <input
                   id="password"
-                  type={
-                    showPassword ? "text" : "password"
-                  }
+                  type={showPassword ? "text" : "password"}
                   required
                   minLength={6}
                   value={password}
-                  onChange={(event) =>
-                    setPassword(event.target.value)
-                  }
+                  onChange={(event) => setPassword(event.target.value)}
                   placeholder="At least 6 characters"
                   className="auth-input pr-12"
                 />
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setShowPassword((visible) => !visible)
-                  }
+                  onClick={() => setShowPassword((visible) => !visible)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[#718399]"
                   aria-label={
-                    showPassword
-                      ? "Hide password"
-                      : "Show password"
+                    showPassword ? "Hide password" : "Show password"
                   }
                 >
                   {showPassword ? (
@@ -621,9 +525,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                   type="password"
                   required
                   value={confirmPassword}
-                  onChange={(event) =>
-                    setConfirmPassword(event.target.value)
-                  }
+                  onChange={(event) => setConfirmPassword(event.target.value)}
                   placeholder="Repeat your password"
                   className="auth-input"
                 />
@@ -653,23 +555,19 @@ export default function AuthForm({ mode }: AuthFormProps) {
               {isSubmitting
                 ? "Please wait..."
                 : isSignUp
-                  ? "Create account"
-                  : "Sign in"}
+                ? "Create account"
+                : "Sign in"}
             </button>
           </form>
 
           <p className="mt-7 text-center text-sm text-[#718399]">
-            {isSignUp
-              ? "Already have an account?"
-              : "New to MedNoviAI?"}{" "}
+            {isSignUp ? "Already have an account?" : "New to MedNoviAI?"}{" "}
 
             <Link
               href={isSignUp ? "/login" : "/signup"}
               className="font-semibold text-[#2563eb] hover:underline"
             >
-              {isSignUp
-                ? "Sign in"
-                : "Create an account"}
+              {isSignUp ? "Sign in" : "Create an account"}
             </Link>
           </p>
         </section>
