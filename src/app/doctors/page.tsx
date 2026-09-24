@@ -6,7 +6,7 @@ import DoctorCard from "@/components/doctors/DoctorCard";
 import DoctorSkeleton from "@/components/doctors/DoctorSkeleton";
 import EmptyDoctors from "@/components/doctors/EmptyDoctors";
 import { useDebounce } from "@/hooks/useDebounce";
-import { supabase } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { Doctor, Specialty } from "@/types/doctor";
 import { Search, RefreshCw } from "lucide-react";
 import Link from "next/link";
@@ -45,6 +45,7 @@ export default function DoctorDirectoryPage() {
   const [specialtiesLoading, setSpecialtiesLoading] = useState(true);
   const [doctorsError, setDoctorsError] = useState(false);
   const [specialtiesError, setSpecialtiesError] = useState(false);
+  const [doctorsRetryKey, setDoctorsRetryKey] = useState(0);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
 
@@ -53,6 +54,15 @@ export default function DoctorDirectoryPage() {
     let isMounted = true;
 
     const loadSpecialties = async () => {
+      if (!isSupabaseConfigured || !supabase) {
+        if (isMounted) {
+          setSpecialties([]);
+          setSpecialtiesError(true);
+          setSpecialtiesLoading(false);
+        }
+        return;
+      }
+
       try {
         setSpecialtiesLoading(true);
         setSpecialtiesError(false);
@@ -85,6 +95,15 @@ export default function DoctorDirectoryPage() {
   useEffect(() => {
     let isMounted = true;
     const loadDoctors = async () => {
+      if (!isSupabaseConfigured || !supabase) {
+        if (isMounted) {
+          setDoctors([]);
+          setDoctorsError(true);
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
         setLoading(true);
         setDoctorsError(false);
@@ -153,7 +172,7 @@ export default function DoctorDirectoryPage() {
     return () => {
       isMounted = false;
     };
-  }, [debouncedSearch, selectedSpecialty]);
+  }, [debouncedSearch, selectedSpecialty, doctorsRetryKey]);
 
   const handleClearFilters = () => {
     setSearchQuery("");
@@ -161,9 +180,7 @@ export default function DoctorDirectoryPage() {
   };
 
   const handleRetryDoctors = () => {
-    setDoctorsError(false);
-    setLoading(true);
-    setSelectedSpecialty((prev) => prev);
+    setDoctorsRetryKey((key) => key + 1);
   };
 
   return (

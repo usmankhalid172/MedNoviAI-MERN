@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/shared/Navbar";
-import { EmptyState } from "@/components/shared/EmptyState";
-import api from "@/lib/api";
+import EmptyState from "@/components/shared/EmptyState";
+import { supabase } from "@/lib/supabase";
 import { ChevronRight, Loader2 } from "lucide-react";
 import Footer from "@/components/shared/Footer";
 
@@ -13,7 +13,7 @@ interface Doctor {
   id: string;
   name: string;
   specialtyId: string;
-  experience: string;
+  experience: number;
   rating: number;
   avatar: string;
 }
@@ -25,426 +25,1200 @@ interface Specialty {
   description: string;
 }
 
+interface FieldErrors {
+  specialty?: string;
+  doctor?: string;
+  date?: string;
+  time?: string;
+}
+
 const STEPS = ["Specialty", "Doctor", "Date & Time", "Confirm"];
 
-function StepSkeleton() {
+function getTodayLocalDate() {
+  const now = new Date();
+
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function convertDisplayTimeTo24Hour(time: string) {
+  const [timePart, modifier] = time.split(" ");
+
+  let [hours, minutes] = timePart.split(":").map(Number);
+
+  if (modifier === "PM" && hours !== 12) {
+    hours += 12;
+  }
+
+  if (modifier === "AM" && hours === 12) {
+    hours = 0;
+  }
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+    2,
+    "0"
+  )}:00`;
+}
+
+function formatTime(time: string) {
+  const [hoursString, minutes] = time.split(":");
+
+  let hours = Number(hoursString);
+
+  const modifier = hours >= 12 ? "PM" : "AM";
+
+  hours = hours % 12;
+
+  if (hours === 0) {
+    hours = 12;
+  }
+
+  return `${hours}:${minutes} ${modifier}`;
+}
+
+function withTimeout<T>(
+  promise: PromiseLike<T>,
+  timeoutMs = 15000
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error("REQUEST_TIMEOUT"));
+    }, timeoutMs);
+
+    Promise.resolve(promise).then(
+      (result) => {
+        clearTimeout(timeoutId);
+        resolve(result);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
+}
+
+function getErrorMessage(error: any) {
+  if (error?.message === "REQUEST_TIMEOUT") {
+    return "The request took too long. Please check your internet connection and try again.";
+  }
+
+  if (
+    error?.code === "23505" ||
+    /duplicate|unique|already exists/i.test(error?.message || "")
+  ) {
+    return "This appointment slot has just been booked by someone else. Please select another time.";
+  }
+
+  if (
+    /network|fetch|failed to fetch|connection/i.test(
+      error?.message || ""
+    )
+  ) {
+    return "Network error. Please check your internet connection and try again.";
+  }
+
   return (
-    <div className="space-y-4">
-      {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="p-4 rounded-xl border border-slate-200 animate-pulse">
-          <div className="h-6 w-6 rounded bg-slate-200 mb-2" />
-          <div className="h-4 w-1/2 rounded bg-slate-200 mb-1" />
-          <div className="h-3 w-2/3 rounded bg-slate-100" />
-        </div>
-      ))}
-    </div>
+    error?.message ||
+    "Something went wrong while booking your appointment. Please try again."
   );
 }
 
-function DoctorListSkeleton() {
-  return (
-    <div className="space-y-4">
-      {[1, 2].map((i) => (
-        <div key={i} className="flex items-center p-4 rounded-xl border border-slate-200 animate-pulse">
-          <div className="w-14 h-14 rounded-full bg-slate-200 mr-4 shrink-0" />
-          <div className="flex-1 space-y-2">
-            <div className="h-4 w-1/2 rounded bg-slate-200" />
-            <div className="h-3 w-1/3 rounded bg-slate-100" />
-          </div>
-          <div className="h-6 w-12 rounded-full bg-slate-200" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export default function BookAppointmentPage() {
+export default function AppointmentBookingPage() {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState<number>(1);
+
+  const [currentStep, setCurrentStep] = useState(1);
 
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
+
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
 
-  const [selectedSpecialty, setSelectedSpecialty] = useState<Specialty | null>(null);
-  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
-  );
-  const [selectedTime, setSelectedTime] = useState<string>("");
+  const [selectedSpecialty, setSelectedSpecialty] =
+    useState<Specialty | null>(null);
+
+  const [selectedDoctor, setSelectedDoctor] =
+    useState<Doctor | null>(null);
+
+  const [selectedDate, setSelectedDate] =
+    useState(getTodayLocalDate());
+
+  const [selectedTime, setSelectedTime] = useState("");
 
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-    async function fetchData() {
+  // ---------------------------------------------------------
+  // LOAD SPECIALTIES + DOCTORS
+  // ---------------------------------------------------------
+
+  useEffect(() => {
+    async function loadData() {
       try {
         setDataLoading(true);
-        const [specRes, docRes] = await Promise.all([
-          api.get("/specialties").catch(() => ({ data: null })),
-          api.get("/doctors").catch(() => ({ data: null })),
-        ]);
-        if (!cancelled) {
-          const specData = specRes.data?.specialties || specRes.data?.data || specRes.data;
-          setSpecialties(Array.isArray(specData) ? specData : []);
-          const docData = docRes.data?.doctors || docRes.data?.data || docRes.data;
-          setAllDoctors(Array.isArray(docData) ? docData : []);
+        setDataError(null);
+
+        if (!supabase) {
+          throw new Error("Supabase is not configured.");
         }
-      } catch {
-        if (!cancelled) setDataError("Unable to load booking data. Please try again later.");
+
+        const [specialtiesResult, doctorsResult] =
+          await Promise.all([
+            supabase
+              .from("specialties")
+              .select("id, name")
+              .order("name"),
+
+            supabase
+              .from("doctors")
+              .select(
+                "id, full_name, experience_years, rating, avatar_url, specialty_id"
+              )
+              .eq("is_available", true),
+          ]);
+
+        if (specialtiesResult.error) {
+          throw specialtiesResult.error;
+        }
+
+        if (doctorsResult.error) {
+          throw doctorsResult.error;
+        }
+
+        const specialtyData =
+          specialtiesResult.data?.map((specialty: any) => ({
+            id: specialty.id,
+            name: specialty.name,
+            icon: "🏥",
+            description: `Consult with our ${specialty.name} specialists.`,
+          })) || [];
+
+        const doctorData =
+          doctorsResult.data?.map((doctor: any) => ({
+            id: doctor.id,
+            name: doctor.full_name,
+            specialtyId: doctor.specialty_id,
+            experience: doctor.experience_years || 0,
+            rating: doctor.rating || 0,
+            avatar:
+              doctor.avatar_url ||
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                doctor.full_name
+              )}`,
+          })) || [];
+
+        setSpecialties(specialtyData);
+        setAllDoctors(doctorData);
+      } catch (error) {
+        console.error("Failed to load booking data:", error);
+
+        setDataError(
+          "Unable to load doctors and specialties. Please try again."
+        );
       } finally {
-        if (!cancelled) setDataLoading(false);
+        setDataLoading(false);
       }
     }
-    fetchData();
-    return () => { cancelled = true; };
+
+    loadData();
   }, []);
 
+  // ---------------------------------------------------------
+  // LOAD AVAILABLE TIME SLOTS
+  // ---------------------------------------------------------
+
   useEffect(() => {
-    if (!selectedDoctor || currentStep !== 3) return;
+    async function loadTimeSlots() {
+      if (
+        !selectedDoctor ||
+        currentStep !== 3 ||
+        !selectedDate
+      ) {
+        return;
+      }
 
-    let cancelled = false;
+      try {
+        setSlotsLoading(true);
+        setSlotsError(null);
+        setSelectedTime("");
 
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setSlotsLoading(true);
-      setSlotsError(null);
-      setSelectedTime("");
-    });
-
-    api
-      .get(`/doctors/${selectedDoctor.id}/availability`, {
-        params: { date: selectedDate },
-      })
-      .then((res) => {
-        const data = res.data?.slots || res.data?.availability || res.data?.data || res.data;
-        if (!cancelled && Array.isArray(data)) {
-          setTimeSlots(
-            data
-              .map((slot: string | { time: string }) =>
-                typeof slot === "string" ? slot : slot?.time
-              )
-              .filter(Boolean)
-          );
-        } else if (!cancelled) {
-          setTimeSlots([]);
+        if (!supabase) {
+          throw new Error("Supabase is not configured.");
         }
-      })
-      .catch(() => {
-        if (!cancelled) setSlotsError("Unable to load available time slots. Please try again.");
-      })
-      .finally(() => {
-        if (!cancelled) setSlotsLoading(false);
-      });
 
-    return () => { cancelled = true; };
-  }, [selectedDoctor, currentStep, selectedDate]);
+        const dateObject = new Date(
+          `${selectedDate}T00:00:00`
+        );
 
-  const handleNext = () => {
-    if (currentStep < 4) setCurrentStep((prev) => prev + 1);
-  };
+        const dayOfWeek = dateObject.getDay();
 
-  const handleBack = () => {
-    if (currentStep > 1) setCurrentStep((prev) => prev - 1);
-  };
+        // Get doctor's working hours
+        const {
+          data: availability,
+          error: availabilityError,
+        } = await supabase
+          .from("doctor_availability")
+          .select("start_time, end_time")
+          .eq("doctor_id", selectedDoctor.id)
+          .eq("day_of_week", dayOfWeek);
 
-  const handleFinalSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (currentStep !== 4 || !selectedDoctor || !selectedSpecialty || !selectedTime) return;
+        if (availabilityError) {
+          throw availabilityError;
+        }
+
+        // Get already booked appointments
+        const {
+          data: bookedAppointments,
+          error: appointmentsError,
+        } = await supabase
+          .from("appointments")
+          .select("time")
+          .eq("doctor_id", selectedDoctor.id)
+          .eq("date", selectedDate)
+          .in("status", [
+            "Scheduled",
+            "Confirmed",
+            "Pending",
+          ]);
+
+        if (appointmentsError) {
+          throw appointmentsError;
+        }
+
+        const bookedTimes = new Set(
+          (bookedAppointments || []).map(
+            (appointment: any) =>
+              String(appointment.time).slice(0, 5)
+          )
+        );
+
+        const generatedSlots: string[] = [];
+
+        for (const schedule of availability || []) {
+          const start = String(schedule.start_time).slice(
+            0,
+            5
+          );
+
+          const end = String(schedule.end_time).slice(0, 5);
+
+          const [startHour, startMinute] = start
+            .split(":")
+            .map(Number);
+
+          const [endHour, endMinute] = end
+            .split(":")
+            .map(Number);
+
+          let currentMinutes =
+            startHour * 60 + startMinute;
+
+          const endMinutes =
+            endHour * 60 + endMinute;
+
+          while (currentMinutes < endMinutes) {
+            const hour = Math.floor(currentMinutes / 60);
+            const minute = currentMinutes % 60;
+
+            const time24 = `${String(hour).padStart(
+              2,
+              "0"
+            )}:${String(minute).padStart(2, "0")}`;
+
+            if (!bookedTimes.has(time24)) {
+              generatedSlots.push(formatTime(time24));
+            }
+
+            currentMinutes += 30;
+          }
+        }
+
+        setTimeSlots(generatedSlots);
+      } catch (error) {
+        console.error(
+          "Failed to load time slots:",
+          error
+        );
+
+        setSlotsError(
+          "Unable to load available time slots. Please try again."
+        );
+      } finally {
+        setSlotsLoading(false);
+      }
+    }
+
+    loadTimeSlots();
+  }, [selectedDoctor, selectedDate, currentStep]);
+
+  // ---------------------------------------------------------
+  // FIELD ERROR HELPERS
+  // ---------------------------------------------------------
+
+  function clearFieldError(field: keyof FieldErrors) {
+    setFieldErrors((previous) => ({
+      ...previous,
+      [field]: undefined,
+    }));
 
     setSubmitError(null);
-    setSubmitting(true);
+  }
+
+  // ---------------------------------------------------------
+  // VALIDATE CURRENT STEP
+  // ---------------------------------------------------------
+
+  function validateCurrentStep() {
+    const errors: FieldErrors = {};
+
+    if (currentStep === 1 && !selectedSpecialty) {
+      errors.specialty = "Please select a specialty.";
+    }
+
+    if (currentStep === 2 && !selectedDoctor) {
+      errors.doctor = "Please select a doctor.";
+    }
+
+    if (currentStep === 3) {
+      if (!selectedDate) {
+        errors.date =
+          "Please select an appointment date.";
+      } else if (
+        selectedDate < getTodayLocalDate()
+      ) {
+        errors.date =
+          "Please select today or a future date.";
+      }
+
+      if (!selectedTime) {
+        errors.time =
+          "Please select an available time slot.";
+      }
+    }
+
+    setFieldErrors(errors);
+
+    return Object.keys(errors).length === 0;
+  }
+
+  // ---------------------------------------------------------
+  // NEXT
+  // ---------------------------------------------------------
+
+  function handleNext() {
+    setSubmitError(null);
+
+    if (!validateCurrentStep()) {
+      return;
+    }
+
+    if (currentStep < 4) {
+      setCurrentStep(
+        (previous) => previous + 1
+      );
+    }
+  }
+
+  // ---------------------------------------------------------
+  // BACK
+  // ---------------------------------------------------------
+
+  function handleBack() {
+    setSubmitError(null);
+
+    if (currentStep > 1) {
+      setCurrentStep(
+        (previous) => previous - 1
+      );
+    }
+  }
+
+  // ---------------------------------------------------------
+  // FINAL BOOKING
+  // ---------------------------------------------------------
+
+  async function handleFinalSubmit() {
+    const allErrors: FieldErrors = {};
+
+    if (!selectedSpecialty) {
+      allErrors.specialty =
+        "Please select a specialty.";
+    }
+
+    if (!selectedDoctor) {
+      allErrors.doctor =
+        "Please select a doctor.";
+    }
+
+    if (!selectedDate) {
+      allErrors.date =
+        "Please select an appointment date.";
+    } else if (
+      selectedDate < getTodayLocalDate()
+    ) {
+      allErrors.date =
+        "Please select today or a future date.";
+    }
+
+    if (!selectedTime) {
+      allErrors.time =
+        "Please select an available time slot.";
+    }
+
+    setFieldErrors(allErrors);
+
+    if (Object.keys(allErrors).length > 0) {
+      return;
+    }
+
+    if (!supabase) {
+      setSubmitError(
+        "Supabase is not configured."
+      );
+      return;
+    }
 
     try {
-      const res = await api.post("/appointments", {
-        doctorId: selectedDoctor.id,
-        doctorName: selectedDoctor.name,
-        specialty: selectedSpecialty.name,
-        date: selectedDate,
+      setSubmitting(true);
+      setSubmitError(null);
+
+      // -----------------------------------------------------
+      // GET LOGGED-IN USER
+      // -----------------------------------------------------
+
+      const storedUser =
+        localStorage.getItem(
+          "mednoviai-user"
+        );
+
+      if (!storedUser) {
+        setSubmitError(
+          "Your session could not be found. Please log in again."
+        );
+        return;
+      }
+
+      let user;
+
+      try {
+        user = JSON.parse(storedUser);
+      } catch {
+        setSubmitError(
+          "Your session is invalid. Please log in again."
+        );
+        return;
+      }
+
+      if (!user?.id) {
+        setSubmitError(
+          "User information is missing. Please log in again."
+        );
+        return;
+      }
+
+      // -----------------------------------------------------
+      // FIND PATIENT
+      // -----------------------------------------------------
+
+      const {
+        data: patient,
+        error: patientError,
+      } = await withTimeout(
+        supabase
+          .from("patients")
+          .select("id")
+          .eq("user_id", user.id)
+          .maybeSingle()
+      );
+
+      if (patientError) {
+        throw patientError;
+      }
+
+      if (!patient) {
+        setSubmitError(
+          "Patient profile was not found. Please complete your patient profile first."
+        );
+        return;
+      }
+
+      // -----------------------------------------------------
+      // CONVERT TIME
+      // -----------------------------------------------------
+
+      const appointmentTime =
+        convertDisplayTimeTo24Hour(
+          selectedTime
+        );
+
+      // -----------------------------------------------------
+      // FINAL SLOT CHECK
+      // -----------------------------------------------------
+
+      const {
+        data: existingAppointment,
+        error: duplicateError,
+      } = await withTimeout(
+        supabase
+          .from("appointments")
+          .select("id")
+          .eq("doctor_id", selectedDoctor!.id)
+          .eq("date", selectedDate)
+          .eq("time", appointmentTime)
+          .in("status", [
+            "Scheduled",
+            "Confirmed",
+            "Pending",
+          ])
+          .maybeSingle()
+      );
+
+      if (duplicateError) {
+        throw duplicateError;
+      }
+
+      if (existingAppointment) {
+        setSubmitError(
+          "This time slot is no longer available. Please choose another time."
+        );
+
+        setSelectedTime("");
+        setCurrentStep(3);
+
+        return;
+      }
+
+      // -----------------------------------------------------
+      // CREATE APPOINTMENT
+      // -----------------------------------------------------
+
+      const {
+        data: createdAppointment,
+        error: insertError,
+      } = await withTimeout(
+        supabase
+          .from("appointments")
+          .insert({
+            patient_id: patient.id,
+            doctor_id: selectedDoctor!.id,
+            doctor_name: selectedDoctor!.name,
+            specialty: selectedSpecialty!.name,
+            date: selectedDate,
+            time: appointmentTime,
+            location:
+              "MedNovi Medical Center, Suite 402",
+            status: "Scheduled",
+            fee: 0,
+          })
+          .select(
+            "id, doctor_name, specialty, date, time, location, status, fee"
+          )
+          .single()
+      );
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      if (!createdAppointment) {
+        throw new Error(
+          "Appointment was not created. Please try again."
+        );
+      }
+
+      // -----------------------------------------------------
+      // REDIRECT TO CONFIRMATION
+      // -----------------------------------------------------
+
+      const params = new URLSearchParams({
+        appointmentId: String(
+          createdAppointment.id
+        ),
+
+        doctor:
+          createdAppointment.doctor_name ||
+          selectedDoctor!.name,
+
+        specialty:
+          createdAppointment.specialty ||
+          selectedSpecialty!.name,
+
+        date: String(
+          createdAppointment.date
+        ),
+
         time: selectedTime,
-        location: "MedNovi Medical Center, Suite 402",
+
+        location:
+          createdAppointment.location ||
+          "MedNovi Medical Center, Suite 402",
+
+        status:
+          createdAppointment.status ||
+          "Scheduled",
+
+        fee: String(
+          createdAppointment.fee ?? 0
+        ),
       });
 
-      const created = res.data?.appointment || res.data?.data || res.data;
-      const bookingRef =
-        created?.id ||
-        created?.bookingId ||
-        "MN-" + Math.floor(100000 + Math.random() * 900000);
+      router.push(
+        `/appointment/confirm?${params.toString()}`
+      );
+    } catch (error: any) {
+      console.error(
+        "Appointment booking failed:",
+        error
+      );
 
-      const query = new URLSearchParams({
-        specialty: selectedSpecialty.name,
-        doctor: selectedDoctor.name,
-        date: selectedDate,
-        time: selectedTime,
-        bookingId: bookingRef,
-      }).toString();
-
-      router.push(`/appointment/confirm?${query}`);
-    } catch {
-      setSubmitError("Unable to confirm your booking. Please try again later.");
+      setSubmitError(
+        getErrorMessage(error)
+      );
     } finally {
       setSubmitting(false);
     }
-  };
+  }
 
-  const availableDoctors = allDoctors.filter(
-    (doc) => doc.specialtyId === selectedSpecialty?.id
-  );
+  // ---------------------------------------------------------
+  // FILTER DOCTORS
+  // ---------------------------------------------------------
+
+  const availableDoctors = selectedSpecialty
+    ? allDoctors.filter(
+        (doctor) =>
+          doctor.specialtyId ===
+          selectedSpecialty.id
+      )
+    : [];
+
+  // ---------------------------------------------------------
+  // DATA ERROR
+  // ---------------------------------------------------------
+
+  if (dataError) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+
+        <main className="container mx-auto px-4 py-16">
+          <EmptyState
+            title="Unable to load booking information"
+            message={dataError}
+          />
+        </main>
+
+        <Footer />
+      </div>
+    );
+  }
 
   return (
-    <>
+    <div className="min-h-screen bg-background">
       <Navbar />
-      <div className="min-h-screen w-full bg-slate-50 px-4 py-24 sm:px-6 sm:py-28 font-sans">
-        <div className="mx-auto mb-4 max-w-3xl">
-          <nav aria-label="Breadcrumb" className="text-xs text-slate-500">
-            <ol className="flex flex-wrap items-center gap-1.5">
-              <li>
-                <Link href="/" className="font-semibold transition hover:text-blue-600">Home</Link>
-              </li>
-              <li><ChevronRight className="size-3.5 text-slate-400" /></li>
-              <li aria-current="page" className="font-semibold text-blue-600">Book Appointment</li>
-            </ol>
-          </nav>
+
+      <main className="container mx-auto px-4 py-8">
+        {/* Breadcrumb */}
+        <div className="mb-6 flex items-center gap-2 text-sm text-muted-foreground">
+          <Link
+            href="/patient/dashboard"
+            className="hover:text-primary"
+          >
+            Dashboard
+          </Link>
+
+          <ChevronRight className="h-4 w-4" />
+
+          <span className="text-foreground">
+            Book Appointment
+          </span>
         </div>
-        <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          {/* Header */}
-          <div className="bg-blue-900 px-5 py-6 text-white sm:px-8">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => window.history.back()}
-                className="inline-flex items-center rounded-lg bg-blue-500 px-3 
-                py-1.5 text-xs font-semibold text-white cursor-pointer hover:bg-blue-700"
-              >
-                &larr; Go Back
-              </button>
-              <span className="text-xs font-medium uppercase tracking-[0.12em] text-blue-100">Appointment</span>
-            </div>
-            <h1 className="text-2xl font-bold">Book an Appointment</h1>
-            <p className="text-blue-100 text-sm mt-1">
-              Complete the 4 steps to book your consultation.
+
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold">
+            Book an Appointment
+          </h1>
+
+          <p className="mt-2 text-muted-foreground">
+            Select your preferred specialty,
+            doctor, date and time.
+          </p>
+        </div>
+
+        {/* Progress */}
+        <div className="mb-10 flex items-center justify-between">
+          {STEPS.map((step, index) => {
+            const stepNumber = index + 1;
+            const active =
+              currentStep >= stepNumber;
+
+            return (
+              <React.Fragment key={step}>
+                <div className="flex flex-col items-center">
+                  <div
+                    className={`flex h-10 w-10 items-center justify-center rounded-full border-2 text-sm font-semibold ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-muted bg-background text-muted-foreground"
+                    }`}
+                  >
+                    {stepNumber}
+                  </div>
+
+                  <span
+                    className={`mt-2 text-xs sm:text-sm ${
+                      active
+                        ? "font-medium text-foreground"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {step}
+                  </span>
+                </div>
+
+                {index <
+                  STEPS.length - 1 && (
+                  <div
+                    className={`mx-2 h-0.5 flex-1 ${
+                      currentStep >
+                      stepNumber
+                        ? "bg-primary"
+                        : "bg-muted"
+                    }`}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* STEP 1 */}
+        {currentStep === 1 && (
+          <section>
+            <h2 className="mb-2 text-xl font-semibold">
+              Choose a Specialty
+            </h2>
+
+            <p className="mb-6 text-sm text-muted-foreground">
+              Select the type of specialist you
+              want to consult.
             </p>
-          </div>
 
-          {/* Progress Indicator */}
-          <div className="border-b border-slate-100 bg-slate-50/50 px-5 py-4 sm:px-8">
-            <div className="flex justify-between items-center">
-              {STEPS.map((stepLabel, idx) => {
-                const stepNum = idx + 1;
-                const isActive = currentStep === stepNum;
-                const isCompleted = currentStep > stepNum;
-                return (
-                  <div key={stepLabel} className="flex items-center space-x-2">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
-                      isCompleted ? "bg-emerald-500 text-white" : isActive ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-500"
-                    }`}>
-                      {isCompleted ? "✓" : stepNum}
-                    </div>
-                    <span className={`text-xs font-medium hidden sm:inline ${isActive ? "text-blue-600 font-semibold" : "text-slate-500"}`}>
-                      {stepLabel}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+            {fieldErrors.specialty && (
+              <p className="mb-4 text-sm font-medium text-destructive">
+                {fieldErrors.specialty}
+              </p>
+            )}
 
-          {/* Form Body */}
-          <div className="p-5 sm:p-8">
-            <form onSubmit={handleFinalSubmit}>
-              {/* STEP 1: Select Specialty */}
-              {currentStep === 1 && (
-                <div className="space-y-4">
-                  <h2 className="text-lg font-bold text-slate-800">Step 1: Select Specialty</h2>
-                  {dataLoading ? (
-                    <StepSkeleton />
-                  ) : dataError ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-                      <p className="text-sm font-semibold text-slate-700">{dataError}</p>
-                    </div>
-                  ) : specialties.length === 0 ? (
-                    <EmptyState title="No specialties available" message="Specialty data will appear here once connected to the server." />
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {specialties.map((spec) => {
-                        const isSelected = selectedSpecialty?.id === spec.id;
-                        return (
-                          <div
-                            key={spec.id}
-                            onClick={() => { setSelectedSpecialty(spec); setSelectedDoctor(null); }}
-                            className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                              isSelected ? "border-blue-600 bg-blue-50/40 ring-1 ring-blue-600" : "border-slate-200 hover:border-slate-300"
-                            }`}
-                          >
-                            <div className="text-2xl mb-2">{spec.icon}</div>
-                            <h3 className="font-semibold text-slate-800">{spec.name}</h3>
-                            <p className="text-xs text-slate-500 mt-1">{spec.description}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* STEP 2: Select Doctor */}
-              {currentStep === 2 && (
-                <div className="space-y-4">
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Step 2: Choose Doctor ({selectedSpecialty?.name})
-                  </h2>
-                  {dataLoading ? (
-                    <DoctorListSkeleton />
-                  ) : availableDoctors.length === 0 ? (
-                    <EmptyState title="No doctors available" message="No doctors are listed for this specialty yet. Please try a different specialty." />
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 max-h-90 overflow-y-auto pr-1">
-                      {availableDoctors.map((doc) => {
-                        const isSelected = selectedDoctor?.id === doc.id;
-                        return (
-                          <div
-                            key={doc.id}
-                            onClick={() => setSelectedDoctor(doc)}
-                            className={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${
-                              isSelected ? "border-blue-600 bg-blue-50/40 ring-1 ring-blue-600" : "border-slate-200 hover:border-slate-300"
-                            }`}
-                          >
-                            <img src={doc.avatar} alt={doc.name} className="w-14 h-14 rounded-full object-cover mr-4" />
-                            <div className="flex-1">
-                              <h3 className="font-semibold text-slate-800">{doc.name}</h3>
-                              <p className="text-xs text-slate-500">{doc.experience}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full">
-                              ★ {doc.rating}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* STEP 3: Date & Time Picker */}
-              {currentStep === 3 && (
-                <div className="space-y-6">
-                  <h2 className="text-lg font-bold text-slate-800">Step 3: Select Date & Time Slot</h2>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-2">Choose Date</label>
-                    <input
-                      type="date"
-                      value={selectedDate}
-                      onChange={(e) => setSelectedDate(e.target.value)}
-                      className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            {dataLoading ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3, 4, 5, 6].map(
+                  (item) => (
+                    <div
+                      key={item}
+                      className="h-32 animate-pulse rounded-xl border bg-muted/30"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-2">Available Slots</label>
-                    {slotsLoading ? (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {[1, 2, 3, 4, 5, 6].map((i) => (
-                          <div key={i} className="h-10 rounded-lg bg-slate-100 animate-pulse" />
-                        ))}
-                      </div>
-                    ) : slotsError ? (
-                      <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-600">{slotsError}</p>
-                    ) : timeSlots.length === 0 ? (
-                      <EmptyState
-                        title="No time slots available"
-                        message="No open slots are available for this doctor on the selected date."
-                      />
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {timeSlots.map((slot) => {
-                          const isSelected = selectedTime === slot;
-                          return (
-                            <button type="button" key={slot} onClick={() => setSelectedTime(slot)} className={`p-3 text-xs font-semibold rounded-lg border transition-all ${
-                              isSelected ? "bg-blue-600 text-white border-blue-600" : "border-slate-200 hover:border-slate-300 text-slate-700"
-                            }`}>
-                              {slot}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 4: Confirm Booking */}
-              {currentStep === 4 && (
-                <div className="space-y-4">
-                  <h2 className="text-lg font-bold text-slate-800">Step 4: Confirm Booking Summary</h2>
-                  <div className="bg-slate-50 p-5 rounded-xl border border-slate-100 space-y-3 text-sm">
-                    {[
-                      { label: "Specialty:", value: selectedSpecialty?.name },
-                      { label: "Doctor:", value: selectedDoctor?.name },
-                      { label: "Date:", value: selectedDate },
-                      { label: "Time Slot:", value: selectedTime },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="flex justify-between gap-3 border-b border-slate-200 pb-2">
-                        <span className="shrink-0 text-slate-500">{label}</span>
-                        <span className="min-w-0 text-right font-semibold text-slate-800">{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Navigation Buttons */}
-              {submitError && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>}
-              <div className="mt-8 flex justify-between items-center border-t border-slate-100 pt-5">
-                <button
-                  type="button"
-                  onClick={handleBack}
-                  disabled={currentStep === 1}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                    currentStep === 1 ? "opacity-0 cursor-default" : "text-slate-600 hover:bg-slate-100"
-                  }`}
-                >
-                  Back
-                </button>
-
-                {currentStep < 4 ? (
-                  <button
-                    type="button"
-                    onClick={handleNext}
-                    disabled={
-                      (currentStep === 1 && !selectedSpecialty) ||
-                      (currentStep === 2 && !selectedDoctor) ||
-                      (currentStep === 3 && (!selectedDate || !selectedTime))
-                    }
-                    className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition"
-                  >
-                    Next Step
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!selectedDoctor || !selectedSpecialty || submitting}
-                    className="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition"
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" /> Confirming...
-                      </>
-                    ) : (
-                      "Confirm Booking"
-                    )}
-                  </button>
+                  )
                 )}
               </div>
-            </form>
-          </div>
+            ) : specialties.length ===
+              0 ? (
+              <EmptyState
+                title="No specialties available"
+                message="No medical specialties are currently available."
+              />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {specialties.map(
+                  (specialty) => {
+                    const selected =
+                      selectedSpecialty?.id ===
+                      specialty.id;
+
+                    return (
+                      <button
+                        type="button"
+                        key={specialty.id}
+                        onClick={() => {
+                          setSelectedSpecialty(
+                            specialty
+                          );
+
+                          setSelectedDoctor(
+                            null
+                          );
+
+                          setSelectedTime("");
+
+                          clearFieldError(
+                            "specialty"
+                          );
+                        }}
+                        className={`rounded-xl border p-5 text-left transition hover:border-primary ${
+                          selected
+                            ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                            : "bg-card"
+                        }`}
+                      >
+                        <div className="mb-3 text-3xl">
+                          {specialty.icon}
+                        </div>
+
+                        <h3 className="font-semibold">
+                          {specialty.name}
+                        </h3>
+
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {
+                            specialty.description
+                          }
+                        </p>
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* STEP 2 */}
+        {currentStep === 2 && (
+          <section>
+            <h2 className="mb-2 text-xl font-semibold">
+              Choose a Doctor
+            </h2>
+
+            <p className="mb-6 text-sm text-muted-foreground">
+              Select a doctor from the available
+              specialists.
+            </p>
+
+            {fieldErrors.doctor && (
+              <p className="mb-4 text-sm font-medium text-destructive">
+                {fieldErrors.doctor}
+              </p>
+            )}
+
+            {availableDoctors.length ===
+            0 ? (
+              <EmptyState
+                title="No doctors available"
+                message="There are no available doctors for this specialty."
+              />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {availableDoctors.map(
+                  (doctor) => {
+                    const selected =
+                      selectedDoctor?.id ===
+                      doctor.id;
+
+                    return (
+                      <button
+                        type="button"
+                        key={doctor.id}
+                        onClick={() => {
+                          setSelectedDoctor(
+                            doctor
+                          );
+
+                          setSelectedTime("");
+
+                          clearFieldError(
+                            "doctor"
+                          );
+                        }}
+                        className={`flex items-center gap-4 rounded-xl border p-5 text-left transition hover:border-primary ${
+                          selected
+                            ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                            : "bg-card"
+                        }`}
+                      >
+                        <img
+                          src={doctor.avatar}
+                          alt={doctor.name}
+                          className="h-16 w-16 rounded-full object-cover"
+                        />
+
+                        <div className="min-w-0">
+                          <h3 className="font-semibold">
+                            Dr.{" "}
+                            {doctor.name}
+                          </h3>
+
+                          <p className="text-sm text-muted-foreground">
+                            {
+                              selectedSpecialty?.name
+                            }
+                          </p>
+
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {
+                              doctor.experience
+                            }{" "}
+                            years experience
+                            {" • "}
+                            ⭐{" "}
+                            {doctor.rating}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* STEP 3 */}
+        {currentStep === 3 && (
+          <section>
+            <h2 className="mb-2 text-xl font-semibold">
+              Select Date & Time
+            </h2>
+
+            <p className="mb-6 text-sm text-muted-foreground">
+              Choose an available date and
+              appointment time.
+            </p>
+
+            {/* Date */}
+            <div className="mb-8">
+              <label
+                htmlFor="appointment-date"
+                className="mb-2 block text-sm font-medium"
+              >
+                Appointment Date
+              </label>
+
+              <input
+                id="appointment-date"
+                type="date"
+                min={getTodayLocalDate()}
+                value={selectedDate}
+                onChange={(event) => {
+                  setSelectedDate(
+                    event.target.value
+                  );
+
+                  setSelectedTime("");
+
+                  clearFieldError("date");
+                }}
+                className="w-full rounded-lg border bg-background px-4 py-3 sm:max-w-sm"
+              />
+
+              {fieldErrors.date && (
+                <p className="mt-2 text-sm font-medium text-destructive">
+                  {fieldErrors.date}
+                </p>
+              )}
+            </div>
+
+            {/* Time */}
+            <div>
+              <h3 className="mb-3 text-sm font-medium">
+                Available Time Slots
+              </h3>
+
+              {fieldErrors.time && (
+                <p className="mb-3 text-sm font-medium text-destructive">
+                  {fieldErrors.time}
+                </p>
+              )}
+
+              {slotsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading available time
+                  slots...
+                </div>
+              ) : slotsError ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                  <p className="text-sm text-destructive">
+                    {slotsError}
+                  </p>
+                </div>
+              ) : timeSlots.length ===
+                0 ? (
+                <div className="rounded-lg border p-5 text-sm text-muted-foreground">
+                  No available time slots
+                  for this doctor on the
+                  selected date.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                  {timeSlots.map(
+                    (time) => {
+                      const selected =
+                        selectedTime ===
+                        time;
+
+                      return (
+                        <button
+                          type="button"
+                          key={time}
+                          onClick={() => {
+                            setSelectedTime(
+                              time
+                            );
+
+                            clearFieldError(
+                              "time"
+                            );
+                          }}
+                          className={`rounded-lg border px-4 py-3 text-sm font-medium transition ${
+                            selected
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "hover:border-primary hover:bg-primary/5"
+                          }`}
+                        >
+                          {time}
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* STEP 4 */}
+        {currentStep === 4 && (
+          <section>
+            <h2 className="mb-2 text-xl font-semibold">
+              Confirm Appointment
+            </h2>
+
+            <p className="mb-6 text-sm text-muted-foreground">
+              Please review your appointment
+              details before confirming.
+            </p>
+
+            <div className="max-w-2xl rounded-xl border bg-card p-6">
+              <div className="space-y-5">
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Specialty
+                  </p>
+
+                  <p className="mt-1 font-medium">
+                    {
+                      selectedSpecialty?.name
+                    }
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Doctor
+                  </p>
+
+                  <p className="mt-1 font-medium">
+                    Dr.{" "}
+                    {selectedDoctor?.name}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Date
+                  </p>
+
+                  <p className="mt-1 font-medium">
+                    {selectedDate}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Time
+                  </p>
+
+                  <p className="mt-1 font-medium">
+                    {selectedTime}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Location
+                  </p>
+
+                  <p className="mt-1 font-medium">
+                    MedNovi Medical Center,
+                    Suite 402
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {submitError && (
+              <div className="mt-5 max-w-2xl rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                <p className="text-sm font-medium text-destructive">
+                  {submitError}
+                </p>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* NAVIGATION */}
+        <div className="mt-10 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+          <button
+            type="button"
+            onClick={handleBack}
+            disabled={
+              currentStep === 1 ||
+              submitting
+            }
+            className="rounded-lg border px-5 py-3 text-sm font-medium transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Back
+          </button>
+
+          {currentStep < 4 ? (
+            <button
+              type="button"
+              onClick={handleNext}
+              className="rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+            >
+              Continue
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleFinalSubmit}
+              disabled={submitting}
+              className="flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Confirming Booking...
+                </>
+              ) : (
+                "Confirm Booking"
+              )}
+            </button>
+          )}
         </div>
-      </div>
+      </main>
+
       <Footer />
-    </>
+    </div>
   );
 }
