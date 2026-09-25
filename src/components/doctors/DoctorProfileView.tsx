@@ -128,32 +128,32 @@ function StarRating({ rating, className }: { rating: number; className?: string 
 function ProfileSkeleton() {
   return (
     <PageLayout>
-      <div className="doctor-profile-page mx-auto max-w-5xl min-w-0 space-y-8 rounded-3xl px-4 py-6 sm:px-5 md:py-8">
-        <Card className="border-0 shadow-lg">
+      <div className="doctor-profile-page mx-auto max-w-5xl min-w-0 space-y-8 rounded-3xl bg-slate-50/80 border border-slate-200/80 p-4 sm:p-6 md:p-8">
+        <Card className="border-0 shadow-lg bg-slate-900 text-white">
           <CardContent className="p-6 md:p-8">
             <div className="flex flex-col items-start gap-6 md:flex-row md:items-start">
-              <div className="size-32 md:size-40 rounded-full bg-[#1e4f8d] animate-pulse shrink-0 border-4 border-[#3769a4]" />
+              <div className="size-32 md:size-40 rounded-full bg-slate-800 animate-pulse shrink-0 border-4 border-slate-700" />
               <div className="flex-1 space-y-4">
                 <div className="space-y-2">
-                  <div className="h-8 w-48 rounded bg-[#1e4f8d] animate-pulse" />
-                  <div className="h-5 w-24 rounded bg-[#1e4f8d] animate-pulse" />
+                  <div className="h-8 w-48 rounded bg-slate-800 animate-pulse" />
+                  <div className="h-5 w-24 rounded bg-slate-800 animate-pulse" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="h-4 w-36 rounded bg-[#1e4f8d] animate-pulse" />
-                  <div className="h-4 w-28 rounded bg-[#1e4f8d] animate-pulse" />
-                  <div className="h-4 w-48 rounded bg-[#1e4f8d] animate-pulse" />
-                  <div className="h-4 w-32 rounded bg-[#1e4f8d] animate-pulse" />
+                  <div className="h-4 w-36 rounded bg-slate-800 animate-pulse" />
+                  <div className="h-4 w-28 rounded bg-slate-800 animate-pulse" />
+                  <div className="h-4 w-48 rounded bg-slate-800 animate-pulse" />
+                  <div className="h-4 w-32 rounded bg-slate-800 animate-pulse" />
                 </div>
               </div>
               <div className="w-full md:w-auto space-y-2">
-                <div className="h-11 w-full md:w-48 rounded-xl bg-[#1e4f8d] animate-pulse" />
+                <div className="h-11 w-full md:w-48 rounded-xl bg-slate-800 animate-pulse" />
               </div>
             </div>
           </CardContent>
         </Card>
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-32 rounded-xl bg-[#163e76] animate-pulse border border-[#3769a4]" />
+            <div key={i} className="h-32 rounded-xl bg-white animate-pulse border border-slate-200" />
           ))}
         </div>
       </div>
@@ -198,7 +198,7 @@ function CalendarWithSlots({
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      <Card>
+      <Card className="border border-slate-200/80 shadow-xs">
         <CardContent className="p-4">
           <div className="mb-3 flex items-center justify-between">
             <Button variant="ghost" size="icon" onClick={prevMonth} aria-label="Previous month">
@@ -230,10 +230,10 @@ function CalendarWithSlots({
                   className={cn(
                     "flex h-9 w-9 items-center justify-center rounded-full text-sm transition-colors mx-auto",
                     isSelected
-                      ? "bg-primary text-primary-foreground font-semibold"
+                      ? "bg-slate-900 text-white font-semibold shadow-xs"
                       : isPast
                         ? "text-muted-foreground/40 cursor-not-allowed"
-                        : "hover:bg-muted",
+                        : "hover:bg-slate-100",
                   )}
                 >
                   {date.getDate()}
@@ -244,17 +244,17 @@ function CalendarWithSlots({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border border-slate-200/80 shadow-xs">
         <CardContent className="p-4">
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <Clock className="size-4 text-primary" />
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <Clock className="size-4 text-emerald-600" />
             Available Slots —{" "}
             {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
           </h3>
           <div className="grid grid-cols-3 gap-2">
             {slotsLoading ? (
               [1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="h-9 rounded-md bg-muted animate-pulse" />
+                <div key={i} className="h-9 rounded-md bg-slate-100 animate-pulse" />
               ))
             ) : slots.length === 0 ? (
               <p className="col-span-3 text-xs text-muted-foreground">
@@ -271,8 +271,8 @@ function CalendarWithSlots({
                     className={cn(
                       "rounded-md border px-2 py-2 text-xs font-medium transition-colors",
                       isSelected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border hover:border-primary hover:text-primary",
+                        ? "border-emerald-600 bg-emerald-600 text-white shadow-xs"
+                        : "border-slate-200 bg-white hover:border-emerald-600 hover:text-emerald-700",
                     )}
                   >
                     {slot}
@@ -386,7 +386,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
   if (notFound || !doctor) {
     return (
       <PageLayout>
-        <div className="mx-auto flex max-w-xl flex-col items-center justify-center gap-5 rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center shadow-sm">
+        <div className="mx-auto flex max-w-xl flex-col items-center justify-center gap-5 rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center shadow-xs">
           <div className="flex size-16 items-center justify-center rounded-full bg-slate-100 text-slate-500">
             <CalendarCheck className="size-7" />
           </div>
@@ -396,7 +396,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
               We could not find the doctor you are looking for. Try browsing the directory again or choose a different specialist.
             </p>
           </div>
-          <Link href="/doctors" className={cn(buttonVariants({ variant: "default", className: "bg-blue-600 hover:bg-blue-700 text-white" }))}>
+          <Link href="/doctors" className={cn(buttonVariants({ variant: "default", className: "bg-emerald-600 hover:bg-emerald-700 text-white" }))}>
             Browse doctors
           </Link>
         </div>
@@ -438,30 +438,31 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
 
   return (
     <PageLayout>
-      <div className="doctor-profile-page mx-auto max-w-5xl min-w-0 space-y-8 rounded-3xl px-4 py-6 sm:px-5 md:py-8">
+      {/* Container Background & Contrast Improvement */}
+      <div className="doctor-profile-page mx-auto max-w-5xl min-w-0 space-y-8 rounded-3xl bg-slate-50/80 border border-slate-200/80 p-4 sm:p-6 md:p-8 shadow-xs">
         <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-xs">
-          <Link href="/" className="font-semibold text-[#dbeafe] transition-opacity hover:opacity-80">Home</Link>
-          <ChevronRight className="size-3.5 text-[#93c5fd]" />
-          <Link href="/doctors" className="font-semibold text-[#dbeafe] transition-opacity hover:opacity-80">Doctors</Link>
-          <ChevronRight className="size-3.5 text-[#93c5fd]" />
-          <span className="font-semibold text-[#93c5fd]">{doctor.name}</span>
+          <Link href="/" className="font-semibold text-slate-600 transition-colors hover:text-slate-900">Home</Link>
+          <ChevronRight className="size-3.5 text-slate-400" />
+          <Link href="/doctors" className="font-semibold text-slate-600 transition-colors hover:text-slate-900">Doctors</Link>
+          <ChevronRight className="size-3.5 text-slate-400" />
+          <span className="font-semibold text-slate-900">{doctor.name}</span>
         </nav>
 
         <Link href="/doctors"
-          className={cn(buttonVariants({ variant: "outline", className: "gap-2 text-white" }))}
+          className={cn(buttonVariants({ variant: "outline", className: "gap-2 bg-white text-slate-700 hover:bg-slate-100 border-slate-200" }))}
         >
           <ArrowLeft className="size-4" />
           Back to Doctors
         </Link>
 
-        {/* ---------- Hero / Profile card ---------- */}
-        <Card className="border-0 shadow-lg">
+        {/* ---------- Hero / Profile Navy-Blue Card ---------- */}
+        <Card className="border-0 shadow-xl bg-slate-900 text-white rounded-2xl overflow-hidden">
           <CardContent className="p-6 md:p-8">
             <div className="flex flex-col items-start gap-6 md:flex-row md:items-start">
               <div className="shrink-0">
-                <Avatar className="size-32 md:size-40 border-4 border-primary/20">
+                <Avatar className="size-32 md:size-40 border-4 border-emerald-500/30 shadow-md">
                   {doctor.image ? <AvatarImage src={doctor.image} alt={doctor.name} /> : null}
-                  <AvatarFallback className="bg-linear-to-br from-primary/20 to-primary/10 text-primary text-4xl font-bold">
+                  <AvatarFallback className="bg-emerald-500/20 text-emerald-400 text-4xl font-bold">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
@@ -469,31 +470,31 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
 
               <div className="min-w-0 flex-1 space-y-3">
                 <div className="space-y-1">
-                  <h1 className="text-3xl font-bold tracking-tight md:text-4xl">{doctor.name}</h1>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">{doctor.specialty}</Badge>
-                    <Badge variant="outline" className="text-xs">Verified</Badge>
+                  <h1 className="text-3xl font-bold tracking-tight md:text-4xl text-white">{doctor.name}</h1>
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30">{doctor.specialty}</Badge>
+                    <Badge variant="outline" className="text-xs text-slate-300 border-slate-700">Verified</Badge>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-2">
                   <div className="flex items-center gap-2">
                     <StarRating rating={doctor.rating} className="scale-110" />
-                    <span className="font-bold text-lg">{doctor.rating}</span>
-                    <span className="text-muted-foreground text-sm">({doctor.reviewCount} reviews)</span>
+                    <span className="font-bold text-lg text-white">{doctor.rating}</span>
+                    <span className="text-slate-400 text-sm">({doctor.reviewCount} reviews)</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
-                    <Briefcase className="size-4 text-primary" />
-                    <span className="font-medium">{doctor.experience} years</span>
-                    <span className="text-muted-foreground">experience</span>
+                    <Briefcase className="size-4 text-emerald-400" />
+                    <span className="font-medium text-slate-200">{doctor.experience} years</span>
+                    <span className="text-slate-400">experience</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
-                    <MapPin className="size-4 text-primary" />
-                    <span className="text-muted-foreground">{doctor.location}</span>
+                    <MapPin className="size-4 text-emerald-400" />
+                    <span className="text-slate-300">{doctor.location}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="font-medium text-primary">PKR {doctor.fee.toLocaleString()}</span>
-                    <span className="text-muted-foreground">per consultation</span>
+                    <span className="font-semibold text-emerald-400">PKR {doctor.fee.toLocaleString()}</span>
+                    <span className="text-slate-400">per consultation</span>
                   </div>
                 </div>
               </div>
@@ -501,67 +502,82 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
               <div className="w-full md:w-auto md:sticky md:top-6">
                 <Button
                   size="lg"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-lg transition-transform active:scale-95"
                   onClick={handleBook}
                   disabled={!selectedSlot || booking}
                 >
                   <CalendarCheck className="size-5 mr-2" />
                   {booking ? "Booking..." : selectedSlot ? "Book Appointment" : "Select a Slot First"}
                 </Button>
-                <p className="text-xs text-muted-foreground text-center mt-2">Click to book your appointment</p>
+                <p className="text-xs text-slate-400 text-center mt-2">Click to book your appointment</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* ---------- Tabs ---------- */}
+        {/* ---------- Tabs with Visible Hover & Active States ---------- */}
         <Tabs defaultValue="about" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6 h-12">
-            <TabsTrigger value="about" className="text-sm md:text-base">About</TabsTrigger>
-            <TabsTrigger value="availability" className="text-sm md:text-base">Availability</TabsTrigger>
-            <TabsTrigger value="reviews" className="text-sm md:text-base">Reviews</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3 mb-6 h-13 p-1.5 bg-slate-200/70 dark:bg-slate-800 rounded-xl border border-slate-300/60">
+            <TabsTrigger 
+              value="about" 
+              className="text-sm md:text-base font-semibold text-slate-600 rounded-lg transition-all duration-200 hover:text-slate-900 hover:bg-white/70 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-md"
+            >
+              About
+            </TabsTrigger>
+            <TabsTrigger 
+              value="availability" 
+              className="text-sm md:text-base font-semibold text-slate-600 rounded-lg transition-all duration-200 hover:text-slate-900 hover:bg-white/70 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-md"
+            >
+              Availability
+            </TabsTrigger>
+            <TabsTrigger 
+              value="reviews" 
+              className="text-sm md:text-base font-semibold text-slate-600 rounded-lg transition-all duration-200 hover:text-slate-900 hover:bg-white/70 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-md"
+            >
+              Reviews
+            </TabsTrigger>
           </TabsList>
 
           {/* About */}
           <TabsContent value="about" className="mt-6 space-y-6">
-            <Card className="border-0 shadow-sm">
+            <Card className="border border-slate-200/80 shadow-xs bg-white">
               <CardContent className="p-6 space-y-4">
                 <div>
-                  <h2 className="text-xl font-bold mb-3">About the Doctor</h2>
-                  <p className="text-base leading-relaxed text-muted-foreground">{doctor.about}</p>
+                  <h2 className="text-xl font-bold mb-3 text-slate-900">About the Doctor</h2>
+                  <p className="text-base leading-relaxed text-slate-600">{doctor.about}</p>
                 </div>
               </CardContent>
             </Card>
 
             <div className="grid gap-6 md:grid-cols-2">
-              <Card className="border-0 shadow-sm">
+              <Card className="border border-slate-200/80 shadow-xs bg-white">
                 <CardContent className="p-6 space-y-4">
-                  <h3 className="flex items-center gap-3 text-lg font-bold">
-                    <div className="p-2 bg-blue-100 rounded-lg"><GraduationCap className="size-5 text-blue-600" /></div>
+                  <h3 className="flex items-center gap-3 text-lg font-bold text-slate-900">
+                    <div className="p-2 bg-emerald-100 rounded-lg"><GraduationCap className="size-5 text-emerald-700" /></div>
                     Education
                   </h3>
                   <ul className="space-y-3">
                     {doctor.education.map((e, i) => (
                       <li key={i} className="flex gap-3 text-sm">
-                        <span className="text-primary font-bold mt-1">•</span>
-                        <span className="text-muted-foreground">{e}</span>
+                        <span className="text-emerald-600 font-bold mt-1">•</span>
+                        <span className="text-slate-600">{e}</span>
                       </li>
                     ))}
                   </ul>
                 </CardContent>
               </Card>
 
-              <Card className="border-0 shadow-sm">
+              <Card className="border border-slate-200/80 shadow-xs bg-white">
                 <CardContent className="p-6 space-y-4">
-                  <h3 className="flex items-center gap-3 text-lg font-bold">
-                    <div className="p-2 bg-green-100 rounded-lg"><Briefcase className="size-5 text-green-600" /></div>
+                  <h3 className="flex items-center gap-3 text-lg font-bold text-slate-900">
+                    <div className="p-2 bg-emerald-100 rounded-lg"><Briefcase className="size-5 text-emerald-700" /></div>
                     Certifications
                   </h3>
                   <ul className="space-y-3">
                     {doctor.certifications.map((c, i) => (
                       <li key={i} className="flex gap-3 text-sm">
-                        <span className="text-primary font-bold mt-1">•</span>
-                        <span className="text-muted-foreground">{c}</span>
+                        <span className="text-emerald-600 font-bold mt-1">•</span>
+                        <span className="text-slate-600">{c}</span>
                       </li>
                     ))}
                   </ul>
@@ -583,7 +599,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
             <div className="mt-6 flex justify-end">
               <Button
                 size="lg"
-                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
+                className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white shadow-md"
                 onClick={handleBook}
                 disabled={!selectedSlot || booking}
               >
@@ -595,17 +611,17 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
 
           {/* Reviews */}
           <TabsContent value="reviews" className="mt-6 space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4 bg-linear-to-r from-primary/10 to-primary/5 p-4 rounded-lg border border-primary/20">
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-900 text-white p-5 rounded-2xl shadow-md border border-slate-800">
               <div>
                 <h2 className="text-lg font-bold">Patient Reviews</h2>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-slate-400">
                   Based on {reviews.length || doctor.reviewCount} verified patient feedback
                 </p>
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right">
-                  <p className="text-3xl font-bold text-primary">{doctor.rating}</p>
-                  <p className="text-xs text-muted-foreground">out of 5</p>
+                  <p className="text-3xl font-bold text-emerald-400">{doctor.rating}</p>
+                  <p className="text-xs text-slate-400">out of 5</p>
                 </div>
                 <div>
                   <StarRating rating={doctor.rating} className="scale-125" />
@@ -614,35 +630,35 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
             </div>
 
             {reviews.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-xs">
                 <p className="text-sm font-semibold text-slate-700">No reviews available yet</p>
                 <p className="mt-1 text-xs text-slate-500">Patient reviews will appear here after consultations.</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {reviews.map((review) => (
-                  <Card key={review.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                  <Card key={review.id} className="border border-slate-200/80 bg-white shadow-xs hover:shadow-md transition-shadow">
                     <CardContent className="p-5 space-y-3">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-center gap-3">
                           <Avatar className="size-10">
-                            <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                            <AvatarFallback className="bg-emerald-100 text-emerald-800 font-bold">
                               {review.patientName.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="text-sm font-semibold">{review.patientName}</p>
-                            <p className="text-xs text-muted-foreground">{review.date}</p>
+                            <p className="text-sm font-semibold text-slate-900">{review.patientName}</p>
+                            <p className="text-xs text-slate-500">{review.date}</p>
                           </div>
                         </div>
                         <StarRating rating={review.rating} />
                       </div>
-                      <p className="flex items-start gap-2 text-sm text-muted-foreground leading-relaxed">
-                        <MessageSquare className="mt-0.5 size-4 shrink-0 text-primary/50" />
+                      <p className="flex items-start gap-2 text-sm text-slate-600 leading-relaxed">
+                        <MessageSquare className="mt-0.5 size-4 shrink-0 text-emerald-600/70" />
                         {review.comment}
                       </p>
-                      <div className="flex items-center gap-1.5 text-xs text-green-600 pt-1">
-                        <ThumbsUp className="size-3.5" />
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium pt-1">
+                        <ThumbsUp className="size-3.5 text-emerald-600" />
                         <span>Verified Patient Review</span>
                       </div>
                     </CardContent>
@@ -656,23 +672,23 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
         {/* ---------- FAQ ---------- */}
         <section className="space-y-4">
           <div className="space-y-1">
-            <h2 className="text-2xl font-bold">
-              Frequently Asked <span className="text-blue-600">Questions</span>
+            <h2 className="text-2xl font-bold text-slate-900">
+              Frequently Asked <span className="text-emerald-600">Questions</span>
             </h2>
-            <p className="text-muted-foreground">
+            <p className="text-slate-600 text-sm">
               Find answers to common questions about Dr. {doctor.name.replace("Dr. ", "")}
             </p>
           </div>
-          <Card className="border-0 shadow-sm">
+          <Card className="border border-slate-200/80 bg-white shadow-xs">
             <CardContent className="p-6">
               <Accordion>
                 {faqs.map((faq, i) => (
                   <AccordionItem key={i} value={`faq-${i}`}>
-                    <AccordionTrigger className="hover:text-primary">
-                      <span className="text-left text-base font-medium">{faq.question}</span>
+                    <AccordionTrigger className="hover:text-emerald-600">
+                      <span className="text-left text-base font-medium text-slate-900">{faq.question}</span>
                     </AccordionTrigger>
                     <AccordionContent>
-                      <p className="text-muted-foreground leading-relaxed">{faq.answer}</p>
+                      <p className="text-slate-600 leading-relaxed">{faq.answer}</p>
                     </AccordionContent>
                   </AccordionItem>
                 ))}
