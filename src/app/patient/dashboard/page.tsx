@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import Footer from "@/components/shared/Footer";
 import { 
-  Bell, 
   Calendar, 
   MessageSquare, 
   Heart, 
@@ -23,7 +22,7 @@ import { toast, Toaster } from "sonner";
 
 export default function PatientDashboardPage() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, isInitializing, logout } = useAuth();
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -40,20 +39,16 @@ export default function PatientDashboardPage() {
   };
 
   useEffect(() => {
-    let active = true;
-    Promise.resolve().then(() => {
-      if (!active) return;
-      if (!user) {
-        const storedToken = localStorage.getItem("token");
-        if (!storedToken) {
-          router.push("/login");
-          return;
-        }
-      }
-      setLoading(false);
-    });
-    return () => { active = false; };
-  }, [user, router]);
+    if (isInitializing) return;
+
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => setLoading(false));
+    return () => window.cancelAnimationFrame(frame);
+  }, [user, isInitializing, router]);
 
   if (loading) {
     return (
