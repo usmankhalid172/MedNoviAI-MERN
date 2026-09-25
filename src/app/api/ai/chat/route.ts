@@ -1,50 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
-import https from "https";
-import axios from "axios";
+import { NextResponse } from 'next/server';
 
-// Bypass local SSL certificate validation for development
-const httpsAgent = new https.Agent({
-  rejectUnauthorized: false,
-});
-
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const authHeader = req.headers.get("authorization");
+    const { message } = await req.json();
 
-    if (!authHeader) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Authorization token required. Please log in first.",
-        },
-        { status: 401 }
-      );
+    if (!message) {
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    // Call the .NET backend API
-    const response = await axios.post(
-      "https://localhost:5001/api/ai/conversations",
-      body,
-      {
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
-        httpsAgent,
-      }
-    );
+    const aiResponse = `Thank you for sharing your symptoms regarding "${message}". Based on standard preliminary intake guidelines, please make sure to log your symptom duration and severity in the intake form so a doctor can review your record.`;
 
-    return NextResponse.json(response.data);
-  } catch (error: any) {
-    console.error("AI Proxy Error:", error?.response?.data || error.message);
+    return NextResponse.json({
+      success: true,
+      reply: aiResponse,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
     return NextResponse.json(
-      {
-        success: false,
-        message:
-          error?.response?.data?.message || "AI service temporarily unavailable",
-      },
-      { status: error?.response?.status || 500 }
+      { error: 'Internal server error processing AI chat' },
+      { status: 500 }
     );
   }
 }
