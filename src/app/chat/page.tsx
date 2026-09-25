@@ -1,132 +1,254 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import MessageBubble, { Message } from '@/components/chat/MessageBubble';
-import ChatInput from '@/components/chat/ChatInput';
-import TypingIndicator from '@/components/chat/TypingIndicator';
-import api from '@/lib/api';
-import { Bot, Sparkles, Activity } from 'lucide-react';
+import React, { useState } from 'react';
+import { sendChatMessage, submitIntakeSummary, IntakeSummaryData } from '@/services/aiService';
 
-const formatChatTime = (date: Date) =>
-  date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'UTC',
-  });
+interface Message {
+  id: string;
+  sender: 'user' | 'ai';
+  text: string;
+  time: string;
+}
 
-export default function ChatPage() {
+export default function AIChatPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      role: 'assistant',
-      content: 'Hello! I am your MedNoviAI Health Assistant. How can I help you analyze your symptoms or answer medical questions today?',
-      timestamp: formatChatTime(new Date()),
+      sender: 'ai',
+      text: 'Hello! I am MedNovi AI Assistant. Describe your symptoms or complete the intake form below to share with a physician.',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
-  const [isLoading, setIsLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, isLoading]);
+  const [intakeForm, setIntakeForm] = useState<IntakeSummaryData>({
+    patientAge: 25,
+    patientGender: 'Male',
+    symptoms: '',
+    duration: '',
+    severity: 'Moderate',
+    recommendedSpecialty: 'General Physician',
+    aiSummary: '',
+  });
 
-  const handleSendMessage = async (content: string) => {
-    const userMessage: Message = {
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputMessage.trim()) return;
+
+    const userMsg: Message = {
       id: Date.now().toString(),
-      role: 'user',
-      content,
-      timestamp: formatChatTime(new Date()),
+      sender: 'user',
+      text: inputMessage,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
+    setMessages((prev) => [...prev, userMsg]);
+    setInputMessage('');
+    setIsTyping(true);
 
-    try {
-      const res = await api.post('/ai/chat', { message: content });
-      const reply =
-        res.data?.reply ||
-        res.data?.message ||
-        res.data?.response ||
-        res.data?.data?.reply || '';
-      if (reply) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: reply,
-            timestamp: formatChatTime(new Date()),
-          },
-        ]);
-      }
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content:
-            'Sorry, I could not reach the AI service right now. Please try again shortly.',
-          timestamp: formatChatTime(new Date()),
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
+    const history = messages.map((m) => ({ role: m.sender, content: m.text }));
+    const res = await sendChatMessage(inputMessage, history);
+
+    setIsTyping(false);
+    const aiMsg: Message = {
+      id: (Date.now() + 1).toString(),
+      sender: 'ai',
+      text: res.reply || 'Thank you. Please complete the medical intake summary form.',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setMessages((prev) => [...prev, aiMsg]);
+  };
+
+  const handleIntakeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const summaryText = `Patient is a ${intakeForm.patientAge}-year-old ${intakeForm.patientGender} reporting ${intakeForm.symptoms} for ${intakeForm.duration}. Severity: ${intakeForm.severity}. Recommended Specialty: ${intakeForm.recommendedSpecialty}.`;
+    
+    const payload = { ...intakeForm, aiSummary: summaryText };
+    await submitIntakeSummary(payload);
+
+    setShowModal(false);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        sender: 'ai',
+        text: `Intake Summary submitted successfully for doctor review: "${summaryText}"`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
   };
 
   return (
-    <div className="flex flex-col h-dvh w-full bg-slate-950 text-slate-100 overflow-hidden">
-      <header className="bg-slate-900/90 border-b border-slate-800 px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between sticky top-0 z-20 backdrop-blur-md shrink-0">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <Link href="/" aria-label="Back to home" className="inline-flex h-8 w-30 shrink-0 items-center 
-            justify-center rounded-lg bg-blue-600 text-slate-200 transition-colors
-            hover:bg-blue-700 hover:text-white">
-            &larr; Go to Home
-          </Link>
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#7C3AED] text-white flex items-center justify-center shrink-0 shadow-md shadow-purple-900/30">
-            <Bot className="w-5 h-5 sm:w-6 sm:h-6" />
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100">
+      <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+            AI
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <h1 className="font-bold text-sm sm:text-lg tracking-wide text-white truncate">MedNoviAI Assistant</h1>
-              <span className="hidden sm:inline-flex items-center gap-1 bg-purple-950/80 border border-purple-800 text-purple-300 text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0">
-                <Sparkles className="w-3 h-3 text-[#7C3AED]" /> Vital AI
-              </span>
-            </div>
-            <p className="text-[11px] sm:text-xs text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-              Active & ready
-            </p>
+          <div>
+            <h1 className="font-bold text-lg text-white">MedNoviAI Assistant</h1>
+            <p className="text-xs text-slate-400">Task 19 — AI Chat & Patient Intake</p>
           </div>
         </div>
-
-        <div className="hidden md:flex items-center gap-2 text-xs text-slate-400 bg-slate-800/60 px-3 py-1.5 rounded-lg border border-slate-700/50 shrink-0">
-          <Activity className="w-4 h-4 text-[#7C3AED]" />
-          Healthcare Assistant Mode
-        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
+        >
+          Create Intake Summary
+        </button>
       </header>
 
-      {/* Main Chat Scroll Area */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <ScrollArea className="h-full px-3 sm:px-6 py-4 sm:py-6">
-          <div className="max-w-4xl mx-auto space-y-1">
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
-            {isLoading && <TypingIndicator />}
-            <div ref={scrollRef} />
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-4xl mx-auto w-full">
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            <div
+              className={`max-w-md p-4 rounded-2xl text-sm ${
+                msg.sender === 'user'
+                  ? 'bg-emerald-600 text-white rounded-br-none'
+                  : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'
+              }`}
+            >
+              <p>{msg.text}</p>
+              <span className="text-[10px] text-slate-400 block text-right mt-1">{msg.time}</span>
+            </div>
           </div>
-        </ScrollArea>
+        ))}
+        {isTyping && (
+          <div className="flex justify-start">
+            <div className="bg-slate-800 text-slate-400 text-xs px-4 py-2 rounded-2xl animate-pulse">
+              MedNovi AI is typing...
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Bottom Input */}
-      <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} />
+      <form onSubmit={handleSendMessage} className="p-4 bg-slate-900 border-t border-slate-800">
+        <div className="max-w-4xl mx-auto flex space-x-2">
+          <input
+            type="text"
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            placeholder="Type your medical query or symptoms..."
+            className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-emerald-500"
+          />
+          <button
+            type="submit"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-6 py-3 rounded-xl transition text-sm"
+          >
+            Send
+          </button>
+        </div>
+      </form>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 space-y-4 text-slate-100">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h2 className="text-lg font-bold text-white">Patient Intake Summary</h2>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleIntakeSubmit} className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-400 mb-1">Age</label>
+                  <input
+                    type="number"
+                    value={intakeForm.patientAge}
+                    onChange={(e) => setIntakeForm({ ...intakeForm, patientAge: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">Gender</label>
+                  <select
+                    value={intakeForm.patientGender}
+                    onChange={(e) => setIntakeForm({ ...intakeForm, patientGender: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Symptoms Description</label>
+                <textarea
+                  value={intakeForm.symptoms}
+                  onChange={(e) => setIntakeForm({ ...intakeForm, symptoms: e.target.value })}
+                  placeholder="e.g. Moderate fever, persistent dry cough, headache"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white h-20"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-slate-400 mb-1">Duration</label>
+                  <input
+                    type="text"
+                    value={intakeForm.duration}
+                    onChange={(e) => setIntakeForm({ ...intakeForm, duration: e.target.value })}
+                    placeholder="e.g. 3 days"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">Severity</label>
+                  <select
+                    value={intakeForm.severity}
+                    onChange={(e) => setIntakeForm({ ...intakeForm, severity: e.target.value as any })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white"
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Moderate">Moderate</option>
+                    <option value="High">High</option>
+                    <option value="Emergency">Emergency</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Recommended Specialty</label>
+                <input
+                  type="text"
+                  value={intakeForm.recommendedSpecialty}
+                  onChange={(e) => setIntakeForm({ ...intakeForm, recommendedSpecialty: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg"
+                >
+                  Save & Send Summary
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
