@@ -1,6 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
-=======
+
 import { useEffect, useState, ChangeEvent, FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -110,11 +109,18 @@ function timeToMinutes(time: string): number {
 }
 
 function validateSlot(slot: TimeSlot): string | null {
-  if (!slot.start || !slot.end) return "Both start and end time are required.";
-  if (slot.start === slot.end)
+  if (!slot.start || !slot.end) {
+    return "Both start and end time are required.";
+  }
+
+  if (slot.start === slot.end) {
     return "Start and end time cannot be the same.";
-  if (timeToMinutes(slot.end) <= timeToMinutes(slot.start))
+  }
+
+  if (timeToMinutes(slot.end) <= timeToMinutes(slot.start)) {
     return "End time must be after start time.";
+  }
+
   return null;
 }
 
@@ -222,8 +228,11 @@ export default function Dashboard() {
 
     if (!doctorId) {
       Promise.resolve().then(() => {
-        if (!cancelled) setProfileLoading(false);
+        if (!cancelled) {
+          setProfileLoading(false);
+        }
       });
+
       return () => {
         cancelled = true;
       };
@@ -239,7 +248,9 @@ export default function Dashboard() {
           .eq("id", doctorId)
           .single();
 
-        if (sbError) throw sbError;
+        if (sbError) {
+          throw sbError;
+        }
 
         if (!cancelled && data) {
           setBio(data.bio || "");
@@ -278,8 +289,11 @@ export default function Dashboard() {
 
     if (!doctorId) {
       Promise.resolve().then(() => {
-        if (!cancelled) setAvailabilityLoading(false);
+        if (!cancelled) {
+          setAvailabilityLoading(false);
+        }
       });
+
       return () => {
         cancelled = true;
       };
@@ -294,7 +308,9 @@ export default function Dashboard() {
           .select("day_of_week, start_time, end_time")
           .eq("doctor_id", doctorId);
 
-        if (sbError) throw sbError;
+        if (sbError) {
+          throw sbError;
+        }
 
         if (!cancelled && data) {
           const map: AvailabilityMap = {};
@@ -302,11 +318,16 @@ export default function Dashboard() {
 
           for (const row of data) {
             const day = row.day_of_week;
+
             if (!map[day]) {
               map[day] = [];
               days.push(day);
             }
-            map[day].push({ start: row.start_time, end: row.end_time });
+
+            map[day].push({
+              start: row.start_time,
+              end: row.end_time,
+            });
           }
 
           setSelectedDays(days);
@@ -316,7 +337,9 @@ export default function Dashboard() {
         if (!cancelled) {
           toast.error(
             "Could not load your availability. Please try again.",
-            { duration: 5000 }
+            {
+              duration: 5000,
+            }
           );
         }
       } finally {
@@ -379,6 +402,7 @@ export default function Dashboard() {
     const errs: ProfileErrors = {};
 
     const trimmedBio = bio.trim();
+
     if (trimmedBio.length < 20) {
       errs.bio = "Bio must be at least 20 characters long.";
     } else if (trimmedBio.length > MAX_BIO_LENGTH) {
@@ -386,6 +410,7 @@ export default function Dashboard() {
     }
 
     const exp = parseInt(experience, 10);
+
     if (
       experience.trim() === "" ||
       Number.isNaN(exp) ||
@@ -396,6 +421,7 @@ export default function Dashboard() {
     }
 
     setProfileErrors(errs);
+
     return Object.keys(errs).length === 0;
   }
 
@@ -403,7 +429,10 @@ export default function Dashboard() {
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
+
+    if (!file) {
+      return;
+    }
 
     if (!file.type.startsWith("image/")) {
       toast.error("Please select a valid image file.");
@@ -418,13 +447,19 @@ export default function Dashboard() {
     setPhotoFile(file);
 
     const reader = new FileReader();
-    reader.onload = () => setPhotoPreview(reader.result as string);
+
+    reader.onload = () => {
+      setPhotoPreview(reader.result as string);
+    };
+
     reader.readAsDataURL(file);
   }
 
   /* --------------------- Save profile ---------------------------- */
 
-  async function handleProfileSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleProfileSubmit(
+    e: FormEvent<HTMLFormElement>
+  ) {
     e.preventDefault();
 
     if (!doctorId) {
@@ -460,15 +495,18 @@ export default function Dashboard() {
             avatar_url: avatarToSave || null,
           },
           { onConflict: "id" }
-        )
+        );
 
-      if (sbError) throw sbError;
+      if (sbError) {
+        throw sbError;
+      }
 
       setPhotoUrl(avatarToSave);
       setPhotoFile(null);
 
       toast.success("Profile updated successfully!", {
-        description: "Your bio, photo, and experience have been saved.",
+        description:
+          "Your bio, photo, and experience have been saved.",
         duration: 4000,
       });
     } catch (err) {
@@ -476,6 +514,7 @@ export default function Dashboard() {
         err instanceof Error
           ? err.message
           : "Failed to save profile. Please try again.";
+
       toast.error("Profile update failed.", {
         description: message,
         duration: 5000,
@@ -489,24 +528,28 @@ export default function Dashboard() {
 
   function toggleDay(day: string) {
     setAvailabilityErrors({});
+
     if (selectedDays.includes(day)) {
       setAvailability((old) => {
         const copy = { ...old };
         delete copy[day];
         return copy;
       });
+
       setSelectedDays((prev) => prev.filter((d) => d !== day));
     } else {
       setAvailability((old) => ({
         ...old,
         [day]: old[day] || [{ start: "10:00", end: "13:00" }],
       }));
+
       setSelectedDays((prev) => [...prev, day]);
     }
   }
 
   function addSlot(day: string) {
     setAvailabilityErrors({});
+
     setAvailability((old) => ({
       ...old,
       [day]: [...(old[day] || []), { start: "", end: "" }],
@@ -515,16 +558,24 @@ export default function Dashboard() {
 
   function removeSlot(day: string, index: number) {
     setAvailabilityErrors({});
-    const slots = (availability[day] || []).filter((_, i) => i !== index);
+
+    const slots = (availability[day] || []).filter(
+      (_, i) => i !== index
+    );
+
     if (slots.length === 0) {
       setAvailability((old) => {
         const copy = { ...old };
         delete copy[day];
         return copy;
       });
+
       setSelectedDays((prev) => prev.filter((d) => d !== day));
     } else {
-      setAvailability((old) => ({ ...old, [day]: slots }));
+      setAvailability((old) => ({
+        ...old,
+        [day]: slots,
+      }));
     }
   }
 
@@ -535,11 +586,16 @@ export default function Dashboard() {
     value: string
   ) {
     setAvailabilityErrors({});
+
     setAvailability((old) => {
       const slots = (old[day] || []).map((slot, i) =>
         i === index ? { ...slot, [field]: value } : slot
       );
-      return { ...old, [day]: slots };
+
+      return {
+        ...old,
+        [day]: slots,
+      };
     });
   }
 
@@ -556,13 +612,16 @@ export default function Dashboard() {
 
     for (const day of selectedDays) {
       const slots = availability[day] || [];
+
       if (slots.length === 0) {
         errs.slots = `${day} has no time slots. Please add at least one.`;
         setAvailabilityErrors(errs);
         return false;
       }
+
       for (const slot of slots) {
         const slotErr = validateSlot(slot);
+
         if (slotErr) {
           errs.slots = `${day}: ${slotErr}`;
           setAvailabilityErrors(errs);
@@ -577,7 +636,9 @@ export default function Dashboard() {
 
   /* -------------------- Save availability ------------------------ */
 
-  async function handleAvailabilitySubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleAvailabilitySubmit(
+    e: FormEvent<HTMLFormElement>
+  ) {
     e.preventDefault();
 
     if (!doctorId) {
@@ -600,7 +661,9 @@ export default function Dashboard() {
         .delete()
         .eq("doctor_id", doctorId);
 
-      if (deleteError) throw deleteError;
+      if (deleteError) {
+        throw deleteError;
+      }
 
       const rows: {
         doctor_id: string;
@@ -625,7 +688,9 @@ export default function Dashboard() {
           .from("doctor_availability")
           .insert(rows);
 
-        if (insertError) throw insertError;
+        if (insertError) {
+          throw insertError;
+        }
       }
 
       toast.success("Availability saved successfully!", {
@@ -637,6 +702,7 @@ export default function Dashboard() {
         err instanceof Error
           ? err.message
           : "Failed to save availability. Please try again.";
+
       toast.error("Availability update failed.", {
         description: message,
         duration: 5000,
@@ -689,7 +755,6 @@ export default function Dashboard() {
             Information of Doctor&apos;s Appointment
           </h1>
 
-
           {/* Doctor Portal Navigation */}
           <section
             aria-label="Doctor portal navigation"
@@ -732,9 +797,7 @@ export default function Dashboard() {
             </Link>
           </section>
 
-=======
-          {/* ---------------------- Stats ---------------------- */}
-
+          {/* Stats */}
           {loading ? (
             <section
               className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
@@ -774,13 +837,14 @@ export default function Dashboard() {
             </section>
           )}
 
-          {/* ============ Profile Edit Section ============ */}
+          {/* Profile Edit Section */}
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-6 py-4">
               <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
                 <User className="size-5 text-blue-600" />
                 Edit Profile
               </h2>
+
               <p className="mt-1 text-sm text-slate-500">
                 Update your bio, profile photo, and experience.
               </p>
@@ -816,6 +880,7 @@ export default function Dashboard() {
                         </span>
                       )}
                     </div>
+
                     <label
                       htmlFor="photo-upload"
                       className="absolute -bottom-1 -right-1 flex size-7 cursor-pointer items-center justify-center rounded-full bg-blue-600 text-white shadow transition hover:bg-blue-700"
@@ -823,6 +888,7 @@ export default function Dashboard() {
                     >
                       <Camera className="size-3.5" />
                     </label>
+
                     <input
                       id="photo-upload"
                       type="file"
@@ -836,6 +902,7 @@ export default function Dashboard() {
                     <p className="text-sm font-semibold text-slate-800">
                       Profile Photo
                     </p>
+
                     <p className="text-xs text-slate-500">
                       JPG or PNG, max 2 MB. Click the camera icon to change.
                     </p>
@@ -850,6 +917,7 @@ export default function Dashboard() {
                   >
                     Experience (years)
                   </label>
+
                   <input
                     id="experience"
                     type="number"
@@ -865,6 +933,7 @@ export default function Dashboard() {
                         : "border-slate-200 bg-slate-50"
                     }`}
                   />
+
                   {profileErrors.experience && (
                     <p className="mt-1 text-xs text-red-600" role="alert">
                       {profileErrors.experience}
@@ -881,10 +950,12 @@ export default function Dashboard() {
                     >
                       Bio
                     </label>
+
                     <span className="text-xs text-slate-400">
                       {bio.length}/{MAX_BIO_LENGTH}
                     </span>
                   </div>
+
                   <textarea
                     id="bio"
                     rows={4}
@@ -898,6 +969,7 @@ export default function Dashboard() {
                         : "border-slate-200 bg-slate-50"
                     }`}
                   />
+
                   {profileErrors.bio && (
                     <p className="mt-1 text-xs text-red-600" role="alert">
                       {profileErrors.bio}
@@ -919,13 +991,14 @@ export default function Dashboard() {
             )}
           </section>
 
-          {/* ========= Availability Setup Section ========= */}
+          {/* Availability Setup Section */}
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-6 py-4">
               <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
                 <Clock className="size-5 text-blue-600" />
                 Availability Setup
               </h2>
+
               <p className="mt-1 text-sm text-slate-500">
                 Select available days and set time slots for each day.
               </p>
@@ -934,6 +1007,7 @@ export default function Dashboard() {
             {availabilityLoading ? (
               <div className="space-y-4 p-6">
                 <div className="h-4 w-48 animate-pulse rounded bg-slate-200" />
+
                 {[1, 2, 3].map((i) => (
                   <div
                     key={i}
@@ -956,6 +1030,7 @@ export default function Dashboard() {
                   <div className="flex flex-wrap gap-2">
                     {WEEK_DAYS.map((day) => {
                       const isSelected = selectedDays.includes(day);
+
                       return (
                         <button
                           key={day}
@@ -1012,55 +1087,59 @@ export default function Dashboard() {
                         </div>
 
                         <div className="space-y-2">
-                          {(availability[day] || []).map((slot, index) => (
-                            <div
-                              key={`${day}-${index}`}
-                              className="flex items-center gap-2"
-                            >
-                              <input
-                                type="time"
-                                value={slot.start}
-                                onChange={(e) =>
-                                  updateSlot(
-                                    day,
-                                    index,
-                                    "start",
-                                    e.target.value
-                                  )
-                                }
-                                className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
-                                aria-label={`Start time for ${day}`}
-                              />
-
-                              <span className="text-xs text-slate-400">
-                                to
-                              </span>
-
-                              <input
-                                type="time"
-                                value={slot.end}
-                                onChange={(e) =>
-                                  updateSlot(
-                                    day,
-                                    index,
-                                    "end",
-                                    e.target.value
-                                  )
-                                }
-                                className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
-                                aria-label={`End time for ${day}`}
-                              />
-
-                              <button
-                                type="button"
-                                onClick={() => removeSlot(day, index)}
-                                className="ml-auto flex size-7 items-center justify-center rounded-md text-red-500 transition hover:bg-red-50"
-                                title="Remove slot"
+                          {(availability[day] || []).map(
+                            (slot, index) => (
+                              <div
+                                key={`${day}-${index}`}
+                                className="flex items-center gap-2"
                               >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </div>
-                          ))}
+                                <input
+                                  type="time"
+                                  value={slot.start}
+                                  onChange={(e) =>
+                                    updateSlot(
+                                      day,
+                                      index,
+                                      "start",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
+                                  aria-label={`Start time for ${day}`}
+                                />
+
+                                <span className="text-xs text-slate-400">
+                                  to
+                                </span>
+
+                                <input
+                                  type="time"
+                                  value={slot.end}
+                                  onChange={(e) =>
+                                    updateSlot(
+                                      day,
+                                      index,
+                                      "end",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
+                                  aria-label={`End time for ${day}`}
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeSlot(day, index)
+                                  }
+                                  className="ml-auto flex size-7 items-center justify-center rounded-md text-red-500 transition hover:bg-red-50"
+                                  title="Remove slot"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              </div>
+                            )
+                          )}
 
                           {(availability[day] || []).length === 0 && (
                             <p className="text-xs text-slate-400">
@@ -1088,6 +1167,7 @@ export default function Dashboard() {
                     className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Save className="size-4" />
+
                     {savingAvailability
                       ? "Saving..."
                       : "Save Availability"}
@@ -1097,7 +1177,7 @@ export default function Dashboard() {
             )}
           </section>
 
-          {/* ----------------- Appointments ------------------ */}
+          {/* Appointments */}
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             {appointments.length === 0 ? (
               <EmptyState
@@ -1109,27 +1189,40 @@ export default function Dashboard() {
                 <table className="w-full min-w-160 text-left text-sm">
                   <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
-                      <th className="px-5 py-3 font-semibold">Patient</th>
+                      <th className="px-5 py-3 font-semibold">
+                        Patient
+                      </th>
 
-                      <th className="px-5 py-3 font-semibold">Doctor</th>
+                      <th className="px-5 py-3 font-semibold">
+                        Doctor
+                      </th>
 
-                      <th className="px-5 py-3 font-semibold">Specialty</th>
+                      <th className="px-5 py-3 font-semibold">
+                        Specialty
+                      </th>
 
                       <th className="px-5 py-3 font-semibold">
                         Date &amp; Time
                       </th>
 
-                      <th className="px-5 py-3 font-semibold">Status</th>
+                      <th className="px-5 py-3 font-semibold">
+                        Status
+                      </th>
                     </tr>
                   </thead>
 
                   <tbody className="divide-y divide-slate-100">
                     {appointments.map((apt) => (
-                      <tr key={apt.id} className="hover:bg-slate-50/60">
+                      <tr
+                        key={apt.id}
+                        className="hover:bg-slate-50/60"
+                      >
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-3">
                             <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
-                              {initials(apt.patientName || "Patient")}
+                              {initials(
+                                apt.patientName || "Patient"
+                              )}
                             </span>
 
                             <span className="font-semibold text-slate-800">

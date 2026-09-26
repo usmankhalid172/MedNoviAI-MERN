@@ -119,7 +119,7 @@ export default function AppointmentPatientPage() {
         // 1. Get appointment details
         const appointmentResponse =
           await api.get<AppointmentResponse>(
-            `/api/appointments/${appointmentId}`
+            `/appointments/${appointmentId}`
           );
 
         const appointmentData = appointmentResponse.data.data;
@@ -136,7 +136,7 @@ export default function AppointmentPatientPage() {
         // 2. Get patient information
         const patientResponse =
           await api.get<PatientResponse>(
-            `/api/patients/${patientId}`
+            `/patients/${patientId}`
           );
 
         setPatient(patientResponse.data.data || null);
@@ -145,7 +145,7 @@ export default function AppointmentPatientPage() {
         try {
           const intakeResponse =
             await api.get<IntakeResponse>(
-              `/api/PatientIntakes/patient/${patientId}`
+              `/PatientIntakes/patient/${patientId}`
             );
 
           const intakes = intakeResponse.data.data || [];
