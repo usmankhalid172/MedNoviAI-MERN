@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import PageLayout from "@/components/shared/PageLayout";
 import LoadingSpinner from "@/components/shared/LoadingSpinner";
 import EmptyState from "@/components/shared/EmptyState";
 import Footer from "@/components/shared/Footer";
+import AppointmentStatusBadge from "@/components/doctor/AppointmentStatusBadge";
 import api from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -135,7 +137,10 @@ export default function DoctorAppointmentsPage() {
       toast.success(`Appointment status updated to ${status}.`);
     } catch (err) {
       console.error("Failed to update appointment status:", err);
-      toast.error("Failed to update appointment status. Please try again.");
+
+      toast.error(
+        "Failed to update appointment status. Please try again."
+      );
     } finally {
       setUpdatingId(null);
     }
@@ -150,28 +155,6 @@ export default function DoctorAppointmentsPage() {
       hour: "2-digit",
       minute: "2-digit",
     });
-  };
-
-  const getStatusClasses = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "confirmed":
-        return "bg-green-100 text-green-700";
-
-      case "pending":
-        return "bg-yellow-100 text-yellow-700";
-
-      case "completed":
-        return "bg-blue-100 text-blue-700";
-
-      case "cancelled":
-        return "bg-red-100 text-red-700";
-
-      case "noshow":
-        return "bg-gray-100 text-gray-700";
-
-      default:
-        return "bg-gray-100 text-gray-700";
-    }
   };
 
   const filterButtons: { label: string; value: Filter }[] = [
@@ -219,6 +202,7 @@ export default function DoctorAppointmentsPage() {
   return (
     <PageLayout>
       <div className="my-6 space-y-6">
+        {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">
             Doctor Appointments
@@ -234,6 +218,7 @@ export default function DoctorAppointmentsPage() {
           {filterButtons.map((button) => (
             <button
               key={button.value}
+              type="button"
               onClick={() => setFilter(button.value)}
               className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
                 filter === button.value
@@ -254,12 +239,11 @@ export default function DoctorAppointmentsPage() {
             </p>
 
             <p className="mt-2 text-sm text-muted-foreground">
-              The current backend documentation does not provide an endpoint
-              for fetching all doctor appointments.
+              The current backend documentation does not provide an
+              endpoint for fetching all doctor appointments.
             </p>
           </div>
         ) : appointments.length === 0 ? (
-          /* Empty State */
           <EmptyState
             title="No Appointments Found"
             message={
@@ -302,14 +286,14 @@ export default function DoctorAppointmentsPage() {
                     key={appointment.id}
                     className="border-b last:border-b-0 hover:bg-muted/30"
                   >
-                    {/* Clickable Patient */}
+                    {/* Patient */}
                     <td className="p-4 font-medium">
-                      <a
+                      <Link
                         href={`/doctor/appointments/${appointment.id}`}
                         className="text-blue-600 hover:underline"
                       >
                         {appointment.patientName}
-                      </a>
+                      </Link>
                     </td>
 
                     {/* Date */}
@@ -324,50 +308,49 @@ export default function DoctorAppointmentsPage() {
 
                     {/* Current Status */}
                     <td className="p-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${getStatusClasses(
-                          appointment.status
-                        )}`}
-                      >
-                        {appointment.status}
-                      </span>
+                      <AppointmentStatusBadge
+                        status={appointment.status}
+                      />
                     </td>
 
                     {/* Status Update */}
                     <td className="p-4">
-                      <select
-                        value={
-                          statusOptions.includes(
-                            appointment.status as AppointmentStatus
-                          )
-                            ? appointment.status
-                            : ""
-                        }
-                        disabled={updatingId === appointment.id}
-                        onChange={(event) =>
-                          updateAppointmentStatus(
-                            appointment.id,
-                            event.target.value as AppointmentStatus
-                          )
-                        }
-                        className="rounded-lg border bg-background px-3 py-2 text-sm"
-                      >
-                        <option value="" disabled>
-                          Select status
-                        </option>
-
-                        {statusOptions.map((status) => (
-                          <option key={status} value={status}>
-                            {status}
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={
+                            statusOptions.includes(
+                              appointment.status as AppointmentStatus
+                            )
+                              ? appointment.status
+                              : ""
+                          }
+                          disabled={updatingId === appointment.id}
+                          onChange={(event) =>
+                            updateAppointmentStatus(
+                              appointment.id,
+                              event.target
+                                .value as AppointmentStatus
+                            )
+                          }
+                          className="rounded-lg border bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="" disabled>
+                            Select status
                           </option>
-                        ))}
-                      </select>
 
-                      {updatingId === appointment.id && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          Updating...
-                        </span>
-                      )}
+                          {statusOptions.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+
+                        {updatingId === appointment.id && (
+                          <span className="text-xs text-muted-foreground">
+                            Updating...
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -376,6 +359,7 @@ export default function DoctorAppointmentsPage() {
           </div>
         )}
       </div>
+
       <Footer />
     </PageLayout>
   );

@@ -9,9 +9,7 @@ import {
   Edit3,
   Loader2,
   Plus,
-  Save,
   Trash2,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,12 +18,10 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import api from "@/lib/api";
+import AvailabilityForm from "@/components/doctor/AvailabilityForm";
 
 interface AvailabilityRecord {
   id: string;
@@ -40,7 +36,7 @@ interface AvailabilityRecord {
   effectiveTo?: string | null;
 }
 
-interface AvailabilityForm {
+interface AvailabilityFormValues {
   dayOfWeek: string;
   startTime: string;
   endTime: string;
@@ -60,7 +56,7 @@ const DAYS = [
   { value: "0", label: "Sunday" },
 ];
 
-const emptyForm: AvailabilityForm = {
+const emptyForm: AvailabilityFormValues = {
   dayOfWeek: "1",
   startTime: "09:00",
   endTime: "13:00",
@@ -116,19 +112,37 @@ function toInputTime(time: string) {
   return time.slice(0, 5);
 }
 
-function getErrorMessage(error: any, fallback: string) {
+function getErrorMessage(error: unknown, fallback: string) {
+  const err = error as {
+    response?: {
+      data?: {
+        message?: string;
+        errors?: Array<{ message?: string } | string>;
+      };
+    };
+  };
+
+  const errors = err?.response?.data?.errors;
+  const firstError = errors?.[0];
+
   return (
-    error?.response?.data?.message ||
-    error?.response?.data?.errors?.[0]?.message ||
-    error?.response?.data?.errors?.[0] ||
+    err?.response?.data?.message ||
+    (typeof firstError === "string"
+      ? firstError
+      : firstError?.message) ||
     fallback
   );
 }
 
-function extractAvailability(data: any): AvailabilityRecord[] {
+function extractAvailability(data: unknown): AvailabilityRecord[] {
+  const response = data as {
+    data?: AvailabilityRecord[];
+    availability?: AvailabilityRecord[];
+  };
+
   const result =
-    data?.data ??
-    data?.availability ??
+    response?.data ??
+    response?.availability ??
     data ??
     [];
 
@@ -148,7 +162,8 @@ export default function DoctorAvailabilityPage() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const [form, setForm] = useState<AvailabilityForm>(emptyForm);
+  const [form, setForm] =
+    useState<AvailabilityFormValues>(emptyForm);
 
   const loadAvailability = async () => {
     if (!user?.id) {
@@ -210,6 +225,16 @@ export default function DoctorAvailabilityPage() {
     setForm(emptyForm);
     setEditingId(null);
     setShowForm(false);
+  };
+
+  const handleFormChange = (
+    field: keyof AvailabilityFormValues,
+    value: string | boolean
+  ) => {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
   };
 
   const validateForm = () => {
@@ -503,240 +528,17 @@ export default function DoctorAvailabilityPage() {
           </Card>
         </div>
 
-        {/* Add/Edit Form */}
+        {/* Reusable Add/Edit Form */}
         {showForm && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>
-                  {editingId
-                    ? "Edit Availability"
-                    : "Add Availability"}
-                </CardTitle>
-
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={resetForm}
-                  disabled={saving}
-                  aria-label="Close"
-                >
-                  <X className="size-4" />
-                </Button>
-              </div>
-            </CardHeader>
-
-            <CardContent className="space-y-5">
-              <div className="grid gap-4 md:grid-cols-2">
-                {/* Day */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="dayOfWeek"
-                    className="text-sm font-medium"
-                  >
-                    Day
-                  </label>
-
-                  <select
-                    id="dayOfWeek"
-                    value={form.dayOfWeek}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setForm((current) => ({
-                        ...current,
-                        dayOfWeek: e.target.value,
-                      }))
-                    }
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {DAYS.map((day) => (
-                      <option
-                        key={day.value}
-                        value={day.value}
-                      >
-                        {day.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Duration */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="slotDurationMinutes"
-                    className="text-sm font-medium"
-                  >
-                    Slot Duration (minutes)
-                  </label>
-
-                  <Input
-                    id="slotDurationMinutes"
-                    type="number"
-                    min={5}
-                    max={240}
-                    step={5}
-                    value={form.slotDurationMinutes}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setForm((current) => ({
-                        ...current,
-                        slotDurationMinutes:
-                          e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                {/* Start Time */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="startTime"
-                    className="text-sm font-medium"
-                  >
-                    Start Time
-                  </label>
-
-                  <Input
-                    id="startTime"
-                    type="time"
-                    value={form.startTime}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setForm((current) => ({
-                        ...current,
-                        startTime: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                {/* End Time */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="endTime"
-                    className="text-sm font-medium"
-                  >
-                    End Time
-                  </label>
-
-                  <Input
-                    id="endTime"
-                    type="time"
-                    value={form.endTime}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setForm((current) => ({
-                        ...current,
-                        endTime: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                {/* Effective From */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="effectiveFrom"
-                    className="text-sm font-medium"
-                  >
-                    Effective From
-                  </label>
-
-                  <Input
-                    id="effectiveFrom"
-                    type="date"
-                    value={form.effectiveFrom}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setForm((current) => ({
-                        ...current,
-                        effectiveFrom: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                {/* Effective To */}
-                <div className="space-y-2">
-                  <label
-                    htmlFor="effectiveTo"
-                    className="text-sm font-medium"
-                  >
-                    Effective To
-                  </label>
-
-                  <Input
-                    id="effectiveTo"
-                    type="date"
-                    value={form.effectiveTo}
-                    disabled={saving}
-                    onChange={(e) =>
-                      setForm((current) => ({
-                        ...current,
-                        effectiveTo: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-
-              {/* Active */}
-              <label className="flex items-center gap-3 rounded-lg border p-4">
-                <input
-                  type="checkbox"
-                  checked={form.isActive}
-                  disabled={saving}
-                  onChange={(e) =>
-                    setForm((current) => ({
-                      ...current,
-                      isActive: e.target.checked,
-                    }))
-                  }
-                  className="size-4"
-                />
-
-                <div>
-                  <p className="text-sm font-medium">
-                    Availability is active
-                  </p>
-
-                  <p className="text-xs text-muted-foreground">
-                    Active availability can be used for appointment booking.
-                  </p>
-                </div>
-              </label>
-
-              {/* Actions */}
-              <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:justify-end">
-                <Button
-                  variant="outline"
-                  onClick={resetForm}
-                  disabled={saving}
-                >
-                  Cancel
-                </Button>
-
-                <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-2 size-4" />
-                      {editingId
-                        ? "Update Availability"
-                        : "Create Availability"}
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <AvailabilityForm
+            form={form}
+            editingId={editingId}
+            saving={saving}
+            days={DAYS}
+            onChange={handleFormChange}
+            onSave={handleSave}
+            onCancel={resetForm}
+          />
         )}
 
         {/* Error */}

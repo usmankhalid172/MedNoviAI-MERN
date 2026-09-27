@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import PageLayout from "@/components/shared/PageLayout";
 import LoadingSpinner from "@/components/shared/LoadingSpinner";
+import PatientInfoSection from "@/components/doctor/PatientInfoSection";
+import IntakeSummary from "@/components/doctor/IntakeSummary";
 import api from "@/lib/api";
+
+/* ----------------------------- Types ------------------------------- */
 
 interface AppointmentDetails {
   id: string;
@@ -91,6 +95,8 @@ interface IntakeResponse {
   message?: string;
 }
 
+/* =============================== Page ============================== */
+
 export default function AppointmentPatientPage() {
   const params = useParams();
   const appointmentId = params.id as string;
@@ -104,6 +110,8 @@ export default function AppointmentPatientPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  /* ---------------------- Fetch Patient Data ---------------------- */
+
   useEffect(() => {
     const fetchPatientData = async () => {
       if (!appointmentId) {
@@ -116,7 +124,7 @@ export default function AppointmentPatientPage() {
         setLoading(true);
         setError("");
 
-        // 1. Get appointment details
+        /* 1. Get appointment details */
         const appointmentResponse =
           await api.get<AppointmentResponse>(
             `/appointments/${appointmentId}`
@@ -133,7 +141,7 @@ export default function AppointmentPatientPage() {
 
         const patientId = appointmentData.patientId;
 
-        // 2. Get patient information
+        /* 2. Get patient information */
         const patientResponse =
           await api.get<PatientResponse>(
             `/patients/${patientId}`
@@ -141,7 +149,7 @@ export default function AppointmentPatientPage() {
 
         setPatient(patientResponse.data.data || null);
 
-        // 3. Get patient intake information
+        /* 3. Get patient intake information */
         try {
           const intakeResponse =
             await api.get<IntakeResponse>(
@@ -150,7 +158,7 @@ export default function AppointmentPatientPage() {
 
           const intakes = intakeResponse.data.data || [];
 
-          // Prefer intake belonging to this appointment
+          /* Prefer intake belonging to this appointment */
           const appointmentIntake =
             intakes.find(
               (item) => item.appointmentId === appointmentId
@@ -163,7 +171,7 @@ export default function AppointmentPatientPage() {
             intakeError
           );
 
-          // Intake is optional.
+          /* Intake is optional */
           setIntake(null);
         }
       } catch (err) {
@@ -183,9 +191,11 @@ export default function AppointmentPatientPage() {
     fetchPatientData();
   }, [appointmentId]);
 
+  /* -------------------------- Helpers ---------------------------- */
+
   const calculateAge = (dateOfBirth?: string) => {
     if (!dateOfBirth) {
-      return null;
+      return undefined;
     }
 
     const birthDate = new Date(dateOfBirth);
@@ -212,7 +222,7 @@ export default function AppointmentPatientPage() {
 
   const getGender = (gender?: number) => {
     if (gender === undefined || gender === null) {
-      return "Not available";
+      return undefined;
     }
 
     switch (gender) {
@@ -223,17 +233,19 @@ export default function AppointmentPatientPage() {
         return "Female";
 
       default:
-        return "Not available";
+        return undefined;
     }
   };
 
   const getPainLevel = (painLevel?: number) => {
     if (painLevel === undefined || painLevel === null) {
-      return "Not available";
+      return undefined;
     }
 
     return `${painLevel}/10`;
   };
+
+  /* --------------------------- Loading ---------------------------- */
 
   if (loading) {
     return (
@@ -245,6 +257,8 @@ export default function AppointmentPatientPage() {
     );
   }
 
+  /* ---------------------------- Error ----------------------------- */
+
   if (error) {
     return (
       <PageLayout>
@@ -255,6 +269,7 @@ export default function AppointmentPatientPage() {
             </p>
 
             <button
+              type="button"
               onClick={() => window.location.reload()}
               className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-white"
             >
@@ -265,6 +280,8 @@ export default function AppointmentPatientPage() {
       </PageLayout>
     );
   }
+
+  /* ---------------------- Patient Not Found ---------------------- */
 
   if (!patient) {
     return (
@@ -282,6 +299,8 @@ export default function AppointmentPatientPage() {
     patient.profile?.dateOfBirth
   );
 
+  /* ============================= JSX ============================== */
+
   return (
     <PageLayout>
       <div className="my-6 space-y-6">
@@ -297,274 +316,171 @@ export default function AppointmentPatientPage() {
         </div>
 
         {/* Patient Information */}
-        <div className="rounded-xl border bg-card p-6">
-          <h2 className="text-lg font-semibold text-foreground">
-            Patient Details
-          </h2>
-
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Name
-              </p>
-
-              <p className="mt-1 font-medium">
-                {patient.fullName || "Not available"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Age
-              </p>
-
-              <p className="mt-1 font-medium">
-                {age !== null
-                  ? age
-                  : "Not available"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Gender
-              </p>
-
-              <p className="mt-1 font-medium">
-                {getGender(patient.profile?.gender)}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Contact
-              </p>
-
-              <p className="mt-1 font-medium">
-                {patient.phoneNumber ||
-                  patient.email ||
-                  "Not available"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Email
-              </p>
-
-              <p className="mt-1 font-medium">
-                {patient.email || "Not available"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Medical Record Number
-              </p>
-
-              <p className="mt-1 font-medium">
-                {patient.medicalRecordNumber ||
-                  "Not available"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Blood Group
-              </p>
-
-              <p className="mt-1 font-medium">
-                {patient.profile?.bloodGroup ||
-                  "Not available"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Allergies
-              </p>
-
-              <p className="mt-1 font-medium">
-                {patient.profile?.allergies ||
-                  "No allergies recorded"}
-              </p>
-            </div>
-
-            <div className="sm:col-span-2">
-              <p className="text-sm text-muted-foreground">
-                Medical History
-              </p>
-
-              <p className="mt-1 font-medium">
-                {patient.profile?.chronicConditions ||
-                  "No medical history available."}
-              </p>
-            </div>
-
-            <div className="sm:col-span-2">
-              <p className="text-sm text-muted-foreground">
-                Current Medications
-              </p>
-
-              <p className="mt-1 font-medium">
-                {patient.profile?.currentMedications ||
-                  "No current medications recorded"}
-              </p>
-            </div>
-          </div>
-        </div>
+        <PatientInfoSection
+          name={patient.fullName}
+          age={age}
+          gender={getGender(patient.profile?.gender)}
+          phone={patient.phoneNumber}
+          email={patient.email}
+          medicalRecordNumber={patient.medicalRecordNumber}
+          bloodGroup={patient.profile?.bloodGroup}
+          allergies={
+            patient.profile?.allergies ||
+            "No allergies recorded"
+          }
+          chronicConditions={
+            patient.profile?.chronicConditions ||
+            "No medical history available."
+          }
+          currentMedications={
+            patient.profile?.currentMedications ||
+            "No current medications recorded"
+          }
+        />
 
         {/* Intake Summary */}
-        <div className="rounded-xl border bg-card p-6">
-          <h2 className="text-lg font-semibold text-foreground">
-            Patient Intake Summary
-          </h2>
+        {!intake ? (
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-6 py-4">
+              <h2 className="text-lg font-bold text-slate-900">
+                Patient Intake Summary
+              </h2>
 
-          {!intake ? (
-            <p className="mt-4 text-muted-foreground">
-              Patient ne intake complete nahi ki
-            </p>
-          ) : (
-            <div className="mt-5 space-y-5">
-              {/* Chief Complaint */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Chief Complaint
+              <p className="mt-1 text-sm text-slate-500">
+                Structured summary of the patient&apos;s submitted intake.
+              </p>
+            </div>
+
+            <div className="p-6">
+              <p className="text-sm text-muted-foreground">
+                Patient ne intake complete nahi ki
+              </p>
+            </div>
+          </section>
+        ) : (
+          <IntakeSummary
+            chiefComplaint={intake.chiefComplaint}
+            symptoms={intake.symptomsDescription}
+            duration={intake.symptomOnset}
+            onset={intake.symptomOnset}
+            suggestedSpecialty={
+              intake.recommendedSpecialtyName
+            }
+            painLevel={getPainLevel(intake.painLevel)}
+            temperature={
+              intake.temperatureCelsius !== undefined
+                ? `${intake.temperatureCelsius} °C`
+                : undefined
+            }
+            bloodPressure={intake.bloodPressure}
+            heartRate={
+              intake.heartRateBpm !== undefined
+                ? `${intake.heartRateBpm} BPM`
+                : undefined
+            }
+            aiSummary={intake.aiSummary}
+            additionalNotes={intake.additionalNotes}
+            submittedAt={intake.submittedAt}
+          />
+        )}
+
+        {/* Appointment Context */}
+        {appointment && (
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-6 py-4">
+              <h2 className="text-lg font-bold text-slate-900">
+                Appointment Information
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Information related to this patient appointment.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2">
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Appointment ID
                 </p>
 
-                <p className="mt-1 font-medium">
-                  {intake.chiefComplaint ||
-                    "Not available"}
-                </p>
-              </div>
-
-              {/* Symptoms */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Symptoms
-                </p>
-
-                <p className="mt-1 font-medium">
-                  {intake.symptomsDescription ||
-                    "Not available"}
-                </p>
-              </div>
-
-              {/* Duration / Onset */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Duration / Onset
-                </p>
-
-                <p className="mt-1 font-medium">
-                  {intake.symptomOnset ||
-                    "Not available"}
-                </p>
-              </div>
-
-              {/* Suggested Specialty */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Suggested Specialty
-                </p>
-
-                <p className="mt-1 font-medium">
-                  {intake.recommendedSpecialtyName ||
-                    "Not available"}
-                </p>
-              </div>
-
-              {/* Pain Level */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Pain Level
-                </p>
-
-                <p className="mt-1 font-medium">
-                  {getPainLevel(intake.painLevel)}
-                </p>
-              </div>
-
-              {/* Temperature */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Temperature
-                </p>
-
-                <p className="mt-1 font-medium">
-                  {intake.temperatureCelsius !==
-                  undefined
-                    ? `${intake.temperatureCelsius} °C`
-                    : "Not available"}
+                <p className="mt-1 break-all text-sm font-medium text-slate-900">
+                  {appointment.id}
                 </p>
               </div>
 
-              {/* Blood Pressure */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Blood Pressure
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Doctor
                 </p>
 
-                <p className="mt-1 font-medium">
-                  {intake.bloodPressure ||
-                    "Not available"}
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {appointment.doctorName || "Not available"}
                 </p>
               </div>
 
-              {/* Heart Rate */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Heart Rate
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Appointment Status
                 </p>
 
-                <p className="mt-1 font-medium">
-                  {intake.heartRateBpm !== undefined
-                    ? `${intake.heartRateBpm} BPM`
-                    : "Not available"}
+                <p className="mt-1 text-sm font-medium capitalize text-slate-900">
+                  {appointment.status || "Not available"}
                 </p>
               </div>
 
-              {/* AI Summary */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  AI Summary
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Scheduled Start
                 </p>
 
-                <p className="mt-1 leading-6">
-                  {intake.aiSummary ||
-                    "Not available"}
-                </p>
-              </div>
-
-              {/* Additional Notes */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Additional Notes
-                </p>
-
-                <p className="mt-1 leading-6">
-                  {intake.additionalNotes ||
-                    "No additional notes"}
-                </p>
-              </div>
-
-              {/* Submitted At */}
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Submitted At
-                </p>
-
-                <p className="mt-1 font-medium">
-                  {intake.submittedAt
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {appointment.scheduledStart
                     ? new Date(
-                        intake.submittedAt
+                        appointment.scheduledStart
                       ).toLocaleString()
                     : "Not available"}
                 </p>
               </div>
+
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Scheduled End
+                </p>
+
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {appointment.scheduledEnd
+                    ? new Date(
+                        appointment.scheduledEnd
+                      ).toLocaleString()
+                    : "Not available"}
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Reason for Visit
+                </p>
+
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {appointment.reasonForVisit ||
+                    "Not available"}
+                </p>
+              </div>
+
+              {appointment.notes && (
+                <div className="rounded-xl bg-slate-50 p-4 sm:col-span-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Appointment Notes
+                  </p>
+
+                  <p className="mt-1 whitespace-pre-wrap text-sm font-medium leading-6 text-slate-900">
+                    {appointment.notes}
+                  </p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </section>
+        )}
       </div>
     </PageLayout>
   );
