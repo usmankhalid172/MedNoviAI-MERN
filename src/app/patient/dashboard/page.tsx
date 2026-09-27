@@ -241,7 +241,7 @@ export default function PatientDashboardPage() {
             </Link>
           </div>
         </div>
-
+        
         {/* AI Assistant Banner */}
         <div className="relative overflow-hidden bg-linear-to-r from-[#0e2a47] via-[#102a45] to-[#1e3a8a] text-white p-6 sm:p-8 rounded-3xl shadow-xl">
           <div className="relative z-10 max-w-xl space-y-3">
