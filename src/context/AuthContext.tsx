@@ -1,93 +1,112 @@
 "use client";
 
-import { createContext, useEffect, useState, ReactNode } from "react";
-import { getToken, removeToken } from "@/lib/auth";
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
-interface User {
+export interface AuthUser {
   id?: string;
   name?: string;
   email?: string;
   role?: string;
+  specialty?: string;
 }
 
 interface AuthContextType {
   isLoggedIn: boolean;
-  user: User | null;
-  login: (user: User) => void;
-  logout: () => void;
+  isInitializing: boolean;
+  user: AuthUser | null;
+  login: (user: AuthUser) => void;
+  logout: () => Promise<void>;
 }
-
-const USER_KEY = "mednoviai-user";
 
 export const AuthContext = createContext<AuthContextType>({
   isLoggedIn: false,
+  isInitializing: true,
   user: null,
   login: () => {},
-  logout: () => {},
+  logout: async () => {},
 });
 
 interface AuthProviderProps {
   children: ReactNode;
 }
 
+function userFromSession(session: Session | null): AuthUser | null {
+  const authUser = session?.user;
+
+  if (!authUser) return null;
+
+  const meta = (authUser.user_metadata ?? {}) as Record<
+    string,
+    string | undefined
+  >;
+
+  return {
+    id: authUser.id,
+    name: meta.name || authUser.email || "",
+    email: authUser.email,
+    role: meta.role || "patient",
+    specialty: meta.specialty,
+  };
+}
+
 export const AuthProvider = ({ children }: AuthProviderProps) => {
+  const [isInitializing, setIsInitializing] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    const token = getToken();
+    let active = true;
 
-    if (!token) {
-      setIsLoggedIn(false);
-      return;
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!active) return;
 
-    setIsLoggedIn(true);
+      const nextUser = userFromSession(session);
 
-    const savedUser = localStorage.getItem(USER_KEY);
+      setUser(nextUser);
+      setIsLoggedIn(!!nextUser);
+      setIsInitializing(false);
+    });
 
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-        return;
-      } catch {
-        localStorage.removeItem(USER_KEY);
-      }
-    }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
 
-    // Fallback: get user information from JWT token
-    try {
-      const raw = token.includes(".") ? token.split(".")[1] : token;
+      const nextUser = userFromSession(session);
 
-      const payload = JSON.parse(atob(raw));
+      setUser(nextUser);
+      setIsLoggedIn(!!nextUser);
+    });
 
-      setUser({
-        id: payload.sub || payload.id || payload.userId,
-        name: payload.name,
-        email: payload.email,
-        role: payload.role,
-      });
-    } catch {
-      // Token exists but is not decodable.
-      // User remains logged in, but user details are unavailable.
-    }
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const logout = () => {
-    removeToken();
-    localStorage.removeItem(USER_KEY);
-    setIsLoggedIn(false);
-    setUser(null);
-  };
-
-  const login = (nextUser: User) => {
+  const login = useCallback((nextUser: AuthUser) => {
     setIsLoggedIn(true);
     setUser(nextUser);
-    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
-  };
+  }, []);
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    setIsLoggedIn(false);
+    setUser(null);
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, user, login, logout }}>
+    <AuthContext.Provider
+      value={{ isLoggedIn, isInitializing, user, login, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );

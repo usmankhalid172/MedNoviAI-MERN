@@ -16,7 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { saveToken } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 type AuthMode = "signin" | "signup";
 type Role = "patient" | "doctor";
@@ -25,77 +25,8 @@ interface AuthFormProps {
   mode: AuthMode;
 }
 
-const USERS_KEY = "mednovi_local_users";
-
-interface LocalUser {
-  id: string;
-  name: string;
-  email: string;
-  password: string;
-  role: Role;
-  specialty?: string;
-}
-
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
-}
-
-function getStoredUsers(): Record<string, LocalUser> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  try {
-    const storedUsers = localStorage.getItem(USERS_KEY);
-    return storedUsers ? JSON.parse(storedUsers) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveStoredUsers(users: Record<string, LocalUser>) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
-function createLocalUserId() {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
-    return crypto.randomUUID();
-  }
-
-  return `user-${Date.now()}`;
-}
-
-function base64Encode(value: string) {
-  return btoa(unescape(encodeURIComponent(value)));
-}
-
-function createLocalToken(user: {
-  id: string;
-  name: string;
-  email: string;
-  role: Role;
-}) {
-  const header = base64Encode(
-    JSON.stringify({
-      alg: "HS256",
-      typ: "JWT",
-    })
-  );
-
-  const payload = base64Encode(
-    JSON.stringify({
-      sub: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      iat: Math.floor(Date.now() / 1000),
-    })
-  );
-
-  return `${header}.${payload}.local-signature`;
 }
 
 export default function AuthForm({ mode }: AuthFormProps) {
@@ -143,142 +74,129 @@ export default function AuthForm({ mode }: AuthFormProps) {
     return () => window.clearTimeout(timer);
   }, [toastMessage]);
 
-  const handleSubmit = (
-  event: React.FormEvent<HTMLFormElement>
-) => {
-  event.preventDefault();
+  const handleSubmit = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
 
-  setErrorMessage("");
+    setErrorMessage("");
 
-  const normalizedEmail = normalizeEmail(email);
+    const normalizedEmail = normalizeEmail(email);
 
-  if (!normalizedEmail) {
-    setErrorMessage("Please enter your email address.");
-    return;
-  }
+    if (!normalizedEmail) {
+      setErrorMessage("Please enter your email address.");
+      return;
+    }
 
-  if (isSignUp && password !== confirmPassword) {
-    setErrorMessage("Passwords do not match.");
-    return;
-  }
+    if (isSignUp && password !== confirmPassword) {
+      setErrorMessage("Passwords do not match.");
+      return;
+    }
 
-  setIsSubmitting(true);
+    setIsSubmitting(true);
 
-  try {
-    const users = getStoredUsers();
-    const existingUser = users[normalizedEmail];
+    try {
+      if (isSignUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            data: {
+              name: name.trim(),
+              role,
+              ...(role === "doctor" && {
+                specialty: specialty.trim(),
+              }),
+            },
+          },
+        });
 
-    /*
-     * SIGNUP
-     */
-    if (isSignUp) {
-      /*
-       * If the email already exists:
-       * - Different role = error (incorrect role for this email)
-       * - Same role = account already exists
-       */
-      if (existingUser) {
-        if (existingUser.role !== role) {
+        if (error) {
           showErrorToast(
-            "You have selected an incorrect role for this email."
+            error.message || "Signup failed. Please try again."
           );
-
-          setIsSubmitting(false);
           return;
         }
 
-        showErrorToast(
-          "An account with this email already exists."
-        );
+        const sessionUser = data.user;
+        const meta = (sessionUser?.user_metadata ?? {}) as Record<
+          string,
+          string | undefined
+        >;
 
-        setIsSubmitting(false);
+        if (data.session) {
+          login({
+            id: sessionUser?.id,
+            name: meta.name || name.trim(),
+            email: sessionUser?.email || normalizedEmail,
+            role: meta.role || role,
+            specialty: meta.specialty,
+          });
+
+          showSuccessToastAndNavigate("Registration successful!", () =>
+            router.push(
+              role === "doctor"
+                ? "/doctor/dashboard"
+                : "/patient/dashboard"
+            )
+          );
+        } else {
+          showSuccessToastAndNavigate(
+            "Registration successful! Please check your email to confirm your account.",
+            () => router.push("/login")
+          );
+        }
+
         return;
       }
 
-      const fullName = name.trim();
-
-      const newUser: LocalUser = {
-        id: createLocalUserId(),
-        name: fullName,
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
-        role,
-        ...(role === "doctor" && {
-          specialty: specialty.trim(),
-        }),
-      };
+      });
 
-      users[normalizedEmail] = newUser;
-      saveStoredUsers(users);
-
-      showSuccessToastAndNavigate("Registration successful!", () =>
-        router.push("/login")
-      );
-
-      return;
-    }
-
-    /*
-     * LOGIN
-     */
-    if (!existingUser) {
-      showErrorToast(
-        "No account exists with this email. Please create an account first."
-      );
-
-      setIsSubmitting(false);
-      return;
-    }
-
-    if (existingUser.password !== password) {
-      showErrorToast("Incorrect password.");
-      setIsSubmitting(false);
-      return;
-    }
-
-    /*
-     * Validate selected role matches stored user's role
-     */
-    if (existingUser.role !== role) {
-      showErrorToast(
-        "You have selected an incorrect role for this email."
-      );
-
-      setIsSubmitting(false);
-      return;
-    }
-
-    /*
-     * Role matches - proceed with login
-     */
-    const loggedInUser = {
-      id: existingUser.id,
-      name: existingUser.name,
-      email: existingUser.email,
-      role: existingUser.role,
-      ...(existingUser.specialty && {
-        specialty: existingUser.specialty,
-      }),
-    };
-
-    saveToken(createLocalToken(loggedInUser));
-
-    login(loggedInUser);
-
-    showSuccessToastAndNavigate("Login successful!", () => {
-      if (existingUser.role === "doctor") {
-        router.push("/doctor/dashboard");
-      } else {
-        router.push("/patient/dashboard");
+      if (error) {
+        showErrorToast(error.message || "Invalid email or password.");
+        return;
       }
-    });
-  } catch (error) {
-    console.error("Error during auth:", error);
-    showErrorToast("An unexpected error occurred. Please try again.");
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+
+      const sessionUser = data.user;
+      const meta = (sessionUser?.user_metadata ?? {}) as Record<
+        string,
+        string | undefined
+      >;
+      const storedRole = meta.role;
+
+      if (storedRole && storedRole !== role) {
+        await supabase.auth.signOut();
+        showErrorToast(
+          "You have selected an incorrect role for this email."
+        );
+        return;
+      }
+
+      login({
+        id: sessionUser?.id,
+        name: meta.name || sessionUser?.email || normalizedEmail,
+        email: sessionUser?.email || normalizedEmail,
+        role: storedRole || role,
+        specialty: meta.specialty,
+      });
+
+      showSuccessToastAndNavigate("Login successful!", () => {
+        router.push(
+          (storedRole || role) === "doctor"
+            ? "/doctor/dashboard"
+            : "/patient/dashboard"
+        );
+      });
+    } catch (error) {
+      console.error("Error during auth:", error);
+      showErrorToast("An unexpected error occurred. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#102f5f] px-4 py-8 sm:px-6">
       {/* Toast Notifications */}

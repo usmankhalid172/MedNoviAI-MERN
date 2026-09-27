@@ -1,45 +1,52 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://localhost:5001';
-
-// Helper to retrieve token from Auth context or localStorage
-const getAuthHeaders = () => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : '';
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
-
-export interface CreateConversationPayload {
-  patientId: string;
-  appointmentId?: string;
-  title: string;
+export interface IntakeSummaryData {
+  patientAge: number;
+  patientGender: string;
+  symptoms: string;
+  duration: string;
+  severity: 'Low' | 'Moderate' | 'High' | 'Emergency';
+  recommendedSpecialty: string;
+  aiSummary: string;
 }
 
-// 1. Create AI Conversation Session (POST /api/ai/conversations)
-export const createAiConversation = async (payload: CreateConversationPayload) => {
-  const response = await fetch(`${BASE_URL}/api/ai/conversations`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(payload),
-  });
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
 
-  const data = await response.json();
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || 'Failed to initialize AI conversation');
+export async function sendChatMessage(message: string, history: Array<{ role: string; content: string }>) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, history }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to send message to AI service');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error in sendChatMessage:', error);
+    return {
+      reply: "I'm having trouble connecting to the AI server. Please verify your backend API connection.",
+      isError: true,
+    };
   }
-  return data.data; // Returns { id, title, status, startedAt, messageCount }
-};
+}
 
-// 2. Fetch Patient Conversations (GET /api/ai/conversations/patient/{patientId})
-export const getPatientConversations = async (patientId: string) => {
-  const response = await fetch(`${BASE_URL}/api/ai/conversations/patient/${patientId}`, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-  });
+export async function submitIntakeSummary(data: IntakeSummaryData) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/ai/intake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
 
-  const data = await response.json();
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || 'Failed to fetch conversations');
+    if (!response.ok) {
+      throw new Error('Failed to submit intake summary');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error submitting intake summary:', error);
+    return { success: false, error: 'Database submission failed' };
   }
-  return data.data;
-};
+}
