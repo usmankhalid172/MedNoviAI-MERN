@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Navbar from "@/components/shared/Navbar";
 import DoctorCard from "@/components/doctors/DoctorCard";
 import DoctorSkeleton from "@/components/doctors/DoctorSkeleton";
@@ -10,7 +10,8 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { Doctor, Specialty } from "@/types/doctor";
 import { Search, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useAuth } from "@/hooks/useAuth"; 
+import { useAuth } from "@/hooks/useAuth";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 
 type DoctorRow = {
   id: string;
@@ -25,12 +26,37 @@ function getSpecialtyName(row: DoctorRow): string {
 }
 
 export default function DoctorDirectoryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 py-24 px-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="h-8 w-64 rounded bg-slate-200 animate-pulse" />
+            <div className="mt-4 h-4 w-96 rounded bg-slate-100 animate-pulse" />
+          </div>
+        </div>
+      }
+    >
+      <DoctorDirectoryContent />
+    </Suspense>
+  );
+}
+
+function DoctorDirectoryContent() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
 
-  const dashboardHref = user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard";
+  const dashboardHref =
+    user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard";
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSpecialty, setSelectedSpecialty] = useState("");
+  // Initialize from URL
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
+  const [selectedSpecialty, setSelectedSpecialty] = useState(
+    searchParams.get("specialty") ?? ""
+  );
+
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
 
@@ -41,6 +67,15 @@ export default function DoctorDirectoryPage() {
   const [doctorsRetryKey, setDoctorsRetryKey] = useState(0);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
+
+  // Sync state → URL whenever search or specialty changes
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set("q", searchQuery);
+    if (selectedSpecialty) params.set("specialty", selectedSpecialty);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [searchQuery, selectedSpecialty, pathname, router]);
 
   // Load specialties
   useEffect(() => {
@@ -120,18 +155,19 @@ export default function DoctorDirectoryPage() {
         const formattedDoctors: Doctor[] = rows
           .filter(
             (doc) =>
-              (!selectedSpecialty || getSpecialtyName(doc) === selectedSpecialtyName) &&
+              (!selectedSpecialty ||
+                getSpecialtyName(doc) === selectedSpecialtyName) &&
               (!searchTerm ||
                 doc.full_name.toLowerCase().includes(searchTerm) ||
                 getSpecialtyName(doc).toLowerCase().includes(searchTerm))
           )
           .map((doc) => ({
-          id: doc.id,
-          name: doc.full_name,
-          specialty: getSpecialtyName(doc),
-          experience: "Experience available on profile",
-          rating: Number(doc.rating) || 0,
-          avatar: doc.avatar_url ?? "",
+            id: doc.id,
+            name: doc.full_name,
+            specialty: getSpecialtyName(doc),
+            experience: "Experience available on profile",
+            rating: Number(doc.rating) || 0,
+            avatar: doc.avatar_url ?? "",
           }));
 
         if (isMounted) setDoctors(formattedDoctors);
@@ -167,9 +203,13 @@ export default function DoctorDirectoryPage() {
       <Navbar />
       <div className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-6xl mx-auto space-y-8">
-          <Link href={dashboardHref} aria-label="Back to your dashboard" className="inline-flex h-10 items-center
+          <Link
+            href={dashboardHref}
+            aria-label="Back to your dashboard"
+            className="inline-flex h-10 items-center
             justify-center gap-2 rounded-lg bg-blue-500 text-slate-200 transition-colors
-            hover:bg-blue-700 hover:text-white px-4">
+            hover:bg-blue-700 hover:text-white px-4"
+          >
             <span aria-hidden="true">&larr;</span> Go to Dashboard
           </Link>
           <div className="space-y-3">
