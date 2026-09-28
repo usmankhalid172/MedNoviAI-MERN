@@ -19,6 +19,7 @@ export default function AIChatPage() {
     setInputMessage,
     isLoading,
     validationError,
+    setValidationError,
     messagesEndRef,
     createNewSession,
     handleSendMessage,

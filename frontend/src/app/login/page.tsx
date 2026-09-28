@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 // Humara banaya hua context import kar rahe hain
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");

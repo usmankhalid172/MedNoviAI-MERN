@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -227,7 +228,7 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
 // Page
 // ─────────────────────────────────────────────────────────
 
-export default function AppointmentBookingPage() {
+function BookAppointmentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedDoctorId = searchParams.get("doctorId");
@@ -895,5 +896,16 @@ export default function AppointmentBookingPage() {
 
       <Footer />
     </div>
+  );
+}
+export default function BookAppointmentPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center text-slate-500">
+        Loading booking details...
+      </div>
+    }>
+      <BookAppointmentContent />
+    </Suspense>
   );
 }

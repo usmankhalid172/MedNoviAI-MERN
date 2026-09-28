@@ -31,7 +31,8 @@ function normalizeEmail(email: string) {
 
 export default function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
-  const { login } = useAuth();
+  const auth = useAuth();
+  const login = auth.login;
 
   const [role, setRole] = useState<Role>("patient");
   const [name, setName] = useState("");
@@ -97,7 +98,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
     try {
       if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await supabase!.auth.signUp({
           email: normalizedEmail,
           password,
           options: {
@@ -150,7 +151,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
         return;
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase!.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
@@ -168,7 +169,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
       const storedRole = meta.role;
 
       if (storedRole && storedRole !== role) {
-        await supabase.auth.signOut();
+        await supabase!.auth.signOut();
         showErrorToast(
           "You have selected an incorrect role for this email."
         );

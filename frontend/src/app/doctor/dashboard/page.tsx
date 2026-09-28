@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useAuth } from '@/context/AuthContext'; // Apne path ke hisab se adjust karein
+import { useAuth } from "@/context/AuthContext";
 import { useRouter } from 'next/navigation';
 
 // TypeScript Interfaces
@@ -19,8 +19,8 @@ interface Appointment {
 }
 
 export default function DoctorDashboard() {
-  const { user, token, loading: authLoading } = useAuth();
-  const router = useRouter();
+const { user, session, isLoading: authLoading } = useAuth();
+const token = session?.access_token;  const router = useRouter();
 
   // States for API Data
   const [stats, setStats] = useState<DashboardStats | null>(null);
