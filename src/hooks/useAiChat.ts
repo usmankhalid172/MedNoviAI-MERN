@@ -158,6 +158,7 @@ export const useAiChat = () => {
     setInputMessage,
     isLoading,
     validationError,
+    setValidationError,
     messagesEndRef,
     createNewSession,
     handleSendMessage,

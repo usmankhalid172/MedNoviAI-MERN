@@ -3,6 +3,7 @@
 import {
   createContext,
   useCallback,
+  useContext,
   useEffect,
   useState,
   type ReactNode,
@@ -18,10 +19,12 @@ export interface AuthUser {
   specialty?: string;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   isLoggedIn: boolean;
   isInitializing: boolean;
+  isLoading: boolean;
   user: AuthUser | null;
+  session: Session | null;
   login: (user: AuthUser) => void;
   logout: () => Promise<void>;
 }
@@ -29,7 +32,9 @@ interface AuthContextType {
 export const AuthContext = createContext<AuthContextType>({
   isLoggedIn: false,
   isInitializing: true,
+  isLoading: true,
   user: null,
+  session: null,
   login: () => {},
   logout: async () => {},
 });
@@ -61,15 +66,22 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
     let active = true;
+
+    if (!supabase) {
+      setIsInitializing(false);
+      return;
+    }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return;
 
       const nextUser = userFromSession(session);
 
+      setSession(session);
       setUser(nextUser);
       setIsLoggedIn(!!nextUser);
       setIsInitializing(false);
@@ -82,8 +94,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
       const nextUser = userFromSession(session);
 
+      setSession(session);
       setUser(nextUser);
       setIsLoggedIn(!!nextUser);
+      setIsInitializing(false);
     });
 
     return () => {
@@ -98,16 +112,35 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   }, []);
 
   const logout = useCallback(async () => {
-    await supabase.auth.signOut();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     setIsLoggedIn(false);
     setUser(null);
+    setSession(null);
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ isLoggedIn, isInitializing, user, login, logout }}
+      value={{
+        isLoggedIn,
+        isInitializing,
+        isLoading: isInitializing,
+        user,
+        session,
+        login,
+        logout,
+      }}
     >
       {children}
     </AuthContext.Provider>
   );
 };
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+}
