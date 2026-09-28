@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { Doctor } from "@/types/doctor";
 import { Star } from "lucide-react";
 
@@ -9,15 +10,36 @@ interface DoctorCardProps {
 }
 
 export default function DoctorCard({ doctor }: DoctorCardProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const initials = doctor.name
+    .replace(/^Dr\.\s*/i, "")
+    .split(" ")
+    .filter(Boolean)
+    .map((name) => name[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  const showAvatar = Boolean(doctor.avatar) && !imageFailed;
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 p-6 flex flex-col justify-between 
       space-y-4 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start gap-4">
-        <img
-          src={doctor.avatar || "https://via.placeholder.com/150"}
-          alt={doctor.name}
-          className="w-16 h-16 rounded-2xl object-cover"
-        />
+        {showAvatar ? (
+          <img
+            src={doctor.avatar}
+            alt={doctor.name}
+            onError={() => setImageFailed(true)}
+            className="w-16 h-16 rounded-2xl object-cover bg-slate-100"
+          />
+        ) : (
+          <div
+            aria-label={`${doctor.name} avatar`}
+            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-lg font-bold text-blue-700"
+          >
+            {initials || "DR"}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <h3 className="text-base font-bold text-slate-900 truncate">
             {doctor.name}
