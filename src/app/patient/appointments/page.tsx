@@ -29,6 +29,19 @@ function getSpecialtyName(doctor: DoctorRow) {
   return doctor.specialty ?? "General";
 }
 
+/**
+ * Returns today's date in YYYY-MM-DD using LOCAL time, not UTC.
+ * This avoids the timezone bug where a late-night booking
+ * gets classified as "past" because UTC is already tomorrow.
+ */
+function getTodayLocalDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function AppointmentsPage() {
   const { user, isLoggedIn, isInitializing } = useAuth();
 
@@ -46,17 +59,26 @@ export default function AppointmentsPage() {
     let isMounted = true;
 
     const load = async () => {
-      if (!isLoggedIn || !user?.id) {
+      // ── 1. Make sure Supabase is configured ──
+      if (!supabase) {
         if (isMounted) {
-          setError("Please login to view your appointments");
+          setError("Supabase is not configured. Check .env.local");
           setLoading(false);
         }
         return;
       }
 
-      if (!supabase) {
+      // ── 2. Get the user from Supabase Auth directly (fallback to useAuth) ──
+      let userId = user?.id;
+
+      if (!userId) {
+        const { data: authData } = await supabase.auth.getUser();
+        userId = authData?.user?.id;
+      }
+
+      if (!userId) {
         if (isMounted) {
-          setError("Supabase is not configured. Check .env.local");
+          setError("Please login to view your appointments");
           setLoading(false);
         }
         return;
@@ -68,35 +90,45 @@ export default function AppointmentsPage() {
           setError(null);
         }
 
+        // ── 3. Fetch appointments for this patient ──
         const { data, error: fetchError } = await supabase
           .from("appointments")
           .select("*")
-          .eq("patient_id", user.id)
-          .order("appointment_date", { ascending: true })
-          .order("appointment_time", { ascending: true });
+          .eq("patient_id", userId)
+          .order("appointment_date", { ascending: false })
+          .order("appointment_time", { ascending: false });
 
         if (fetchError) throw fetchError;
 
-        if (isMounted) {
-          const appointmentRows = (data ?? []) as AppointmentRow[];
-          const doctorIds = [...new Set(
+        const appointmentRows = (data ?? []) as AppointmentRow[];
+
+        // ── 4. Fetch linked doctors ──
+        const doctorIds = [
+          ...new Set(
             appointmentRows
               .map((appointment) => appointment.doctor_id)
               .filter((id): id is string => Boolean(id))
-          )];
-          const { data: doctors, error: doctorsError } = doctorIds.length
-            ? await supabase
-                .from("doctors")
-                .select("id, full_name, avatar_url, specialty")
-                .in("id", doctorIds)
-            : { data: [], error: null };
+          ),
+        ];
+
+        let doctorById = new Map<string, DoctorRow>();
+
+        if (doctorIds.length > 0) {
+          const { data: doctors, error: doctorsError } = await supabase
+            .from("doctors")
+            .select("id, full_name, avatar_url, specialty")
+            .in("id", doctorIds);
 
           if (doctorsError) throw doctorsError;
 
-          const doctorById = new Map(
+          doctorById = new Map(
             ((doctors ?? []) as DoctorRow[]).map((doctor) => [doctor.id, doctor])
           );
-          const formattedAppointments = appointmentRows.map((appointment) => {
+        }
+
+        // ── 5. Format and store ──
+        const formattedAppointments: Appointment[] = appointmentRows.map(
+          (appointment) => {
             const doctor = appointment.doctor_id
               ? doctorById.get(appointment.doctor_id)
               : undefined;
@@ -112,7 +144,10 @@ export default function AppointmentsPage() {
                   }
                 : null,
             };
-          });
+          }
+        );
+
+        if (isMounted) {
           setAppointments(formattedAppointments);
         }
       } catch (err: unknown) {
@@ -134,7 +169,8 @@ export default function AppointmentsPage() {
     };
   }, [isLoggedIn, user?.id, isInitializing]);
 
-  const today = new Date().toISOString().split("T")[0];
+  // ── 6. Split into upcoming / past using LOCAL today (not UTC) ──
+  const today = getTodayLocalDate();
 
   const upcoming = appointments.filter(
     (a) =>
@@ -153,14 +189,13 @@ export default function AppointmentsPage() {
   const displayed = activeTab === "upcoming" ? upcoming : past;
 
   const refresh = () => {
-    // simple way to re-trigger the effect
     window.location.reload();
   };
 
   if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p>Loading...</p>
+        <p className="text-slate-500">Loading…</p>
       </div>
     );
   }
@@ -169,66 +204,73 @@ export default function AppointmentsPage() {
     <>
       <Navbar />
       <div className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans">
-      <div className="max-w-6xl mx-auto space-y-8">
-        <Link href="/patient/dashboard" aria-label="Back to your dashboard" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-500 text-slate-200 transition-colors hover:bg-blue-700 hover:text-white px-4">
-          <span aria-hidden="true">&larr;</span> Go to Dashboard
-        </Link>
-        <div className="space-y-3">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-            My Appointments
-          </h1>
-          <p className="max-w-xl text-sm text-slate-500">
-            Review upcoming visits, manage changes, and keep track of your care history.
-          </p>
-        </div>
-
-        <div className="flex gap-2 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
-          <button
-            onClick={() => setActiveTab("upcoming")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-              activeTab === "upcoming"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-            }`}
+        <div className="max-w-6xl mx-auto space-y-8">
+          <Link
+            href="/patient/dashboard"
+            aria-label="Back to your dashboard"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-500 text-slate-200 transition-colors hover:bg-blue-700 hover:text-white px-4"
           >
-            Upcoming ({upcoming.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("past")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-              activeTab === "past"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            Past ({past.length})
-          </button>
-        </div>
+            <span aria-hidden="true">&larr;</span> Go to Dashboard
+          </Link>
 
-        {loading ? (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {[1, 2, 3].map((i) => (
-              <AppointmentSkeleton key={i} />
-            ))}
+          <div className="space-y-3">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+              My Appointments
+            </h1>
+            <p className="max-w-xl text-sm text-slate-500">
+              Review upcoming visits, manage changes, and keep track of your care history.
+            </p>
           </div>
-        ) : error ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">{error}</div>
-        ) : displayed.length === 0 ? (
-          <EmptyAppointments tab={activeTab} />
-        ) : (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {displayed.map((appt) => (
-              <AppointmentCard
-                key={appt.id}
-                appointment={appt}
-                onCancel={() => setCancelId(appt.id)}
-                onReschedule={() => setRescheduleAppt(appt)}
-                showActions={activeTab === "upcoming"}
-              />
-            ))}
+
+          <div className="flex gap-2 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
+            <button
+              onClick={() => setActiveTab("upcoming")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === "upcoming"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              Upcoming ({upcoming.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("past")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === "past"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              Past ({past.length})
+            </button>
           </div>
-        )}
-      </div>
+
+          {loading ? (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {[1, 2, 3].map((i) => (
+                <AppointmentSkeleton key={i} />
+              ))}
+            </div>
+          ) : error ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">
+              {error}
+            </div>
+          ) : displayed.length === 0 ? (
+            <EmptyAppointments tab={activeTab} />
+          ) : (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {displayed.map((appt) => (
+                <AppointmentCard
+                  key={appt.id}
+                  appointment={appt}
+                  onCancel={() => setCancelId(appt.id)}
+                  onReschedule={() => setRescheduleAppt(appt)}
+                  showActions={activeTab === "upcoming"}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {cancelId && (

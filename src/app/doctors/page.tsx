@@ -15,20 +15,13 @@ import { useAuth } from "@/hooks/useAuth";
 type DoctorRow = {
   id: string;
   full_name: string;
-  experience_years: number | null;
   rating: number | null;
-  reviews_count: number | null;
   avatar_url: string | null;
-  consultation_fee: number | null;
-  specialty_id: string;
-  specialties: { name: string } | { name: string }[] | null;
+  specialty: string | null;
 };
 
 function getSpecialtyName(row: DoctorRow): string {
-  const rel = row.specialties;
-  if (!rel) return "General";
-  if (Array.isArray(rel)) return rel[0]?.name ?? "General";
-  return rel.name ?? "General";
+  return row.specialty ?? "General";
 }
 
 export default function DoctorDirectoryPage() {
@@ -108,30 +101,9 @@ export default function DoctorDirectoryPage() {
         setLoading(true);
         setDoctorsError(false);
 
-        let query = supabase
+        const query = supabase
           .from("doctors")
-          .select(
-            `
-            id,
-            full_name,
-            experience_years,
-            rating,
-            reviews_count,
-            avatar_url,
-            consultation_fee,
-            specialty_id,
-            specialties ( name )
-          `
-          )
-          .eq("is_available", true);
-
-        if (selectedSpecialty) {
-          query = query.eq("specialty_id", selectedSpecialty);
-        }
-
-        if (debouncedSearch.trim()) {
-          query = query.ilike("full_name", `%${debouncedSearch.trim()}%`);
-        }
+          .select("id, full_name, specialty, rating, avatar_url");
 
         const { data, error } = await query.order("rating", {
           ascending: false,
@@ -141,19 +113,26 @@ export default function DoctorDirectoryPage() {
 
         const rows = (data ?? []) as unknown as DoctorRow[];
 
-        const formattedDoctors: Doctor[] = rows.map((doc) => ({
+        const searchTerm = debouncedSearch.trim().toLowerCase();
+        const selectedSpecialtyName = specialties.find(
+          (specialty) => specialty.id === selectedSpecialty
+        )?.name;
+        const formattedDoctors: Doctor[] = rows
+          .filter(
+            (doc) =>
+              (!selectedSpecialty || getSpecialtyName(doc) === selectedSpecialtyName) &&
+              (!searchTerm ||
+                doc.full_name.toLowerCase().includes(searchTerm) ||
+                getSpecialtyName(doc).toLowerCase().includes(searchTerm))
+          )
+          .map((doc) => ({
           id: doc.id,
           name: doc.full_name,
           specialty: getSpecialtyName(doc),
-          specialtyId: doc.specialty_id,
-          experience: `${doc.experience_years ?? 0} Yrs Exp`,
+          experience: "Experience available on profile",
           rating: Number(doc.rating) || 0,
-          reviewsCount: Number(doc.reviews_count) || 0,
-          avatar: doc.avatar_url || "https://via.placeholder.com/150",
-          consultationFee: doc.consultation_fee
-            ? `$${doc.consultation_fee}`
-            : undefined,
-        }));
+          avatar: doc.avatar_url ?? "",
+          }));
 
         if (isMounted) setDoctors(formattedDoctors);
       } catch (error) {
@@ -172,7 +151,7 @@ export default function DoctorDirectoryPage() {
     return () => {
       isMounted = false;
     };
-  }, [debouncedSearch, selectedSpecialty, doctorsRetryKey]);
+  }, [debouncedSearch, selectedSpecialty, specialties, doctorsRetryKey]);
 
   const handleClearFilters = () => {
     setSearchQuery("");
@@ -238,7 +217,7 @@ export default function DoctorDirectoryPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {loading ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <DoctorSkeleton key={i} />

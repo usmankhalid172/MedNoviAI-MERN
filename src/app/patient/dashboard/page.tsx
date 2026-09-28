@@ -302,12 +302,12 @@ export default function PatientDashboardPage() {
           rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-xl underline font-bold text-white"> Appointments: </h3>
-              <Link href="/appointment/confirm" className="text-xs font-semibold bg-blue-500 hover:bg-blue-700 text-white
+              <Link href="/patient/appointments" className="text-xs font-semibold bg-blue-500 hover:bg-blue-700 text-white
                 px-4 py-2 cursor-pointer rounded-lg"> Check Status </Link>
             </div>
             <p className="text-sm text-white">Track pending appointment confirmations or view past consultation 
               history.</p>
-            <Link href="/appointment/confirm" className="block">
+            <Link href="/patient/appointments" className="block">
               <Button variant="outline" className="w-fit text-white text-xs font-semibold
                 rounded-xl h-10 bg-blue-500 hover:bg-blue-700 cursor-pointer">
                 View My Consultations
