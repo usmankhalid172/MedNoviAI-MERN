@@ -19,6 +19,7 @@ import {
   Stethoscope,
   Menu,
   X,
+  UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -345,16 +346,24 @@ export default function PatientDashboardPage() {
           </nav>
 
           <div className="hidden md:flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex items-center gap-2 rounded-lg border border-red-400/40 bg-red-600 px-4 py-2
-                text-xs font-semibold text-white transition-colors hover:bg-red-700 cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </button>
-          </div>
+  <Link
+    href="/patient/profile"
+    className="flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2
+      text-xs font-semibold text-white transition-colors hover:bg-white/20"
+  >
+    <UserRound className="w-4 h-4" />
+    My Profile
+  </Link>
+  <button
+    type="button"
+    onClick={handleLogout}
+    className="flex items-center gap-2 rounded-lg border border-red-400/40 bg-red-600 px-4 py-2
+      text-xs font-semibold text-white transition-colors hover:bg-red-700 cursor-pointer"
+  >
+    <LogOut className="w-4 h-4" />
+    Logout
+  </button>
+</div>
 
           <div className="flex items-center gap-2 md:hidden">
             <Button
