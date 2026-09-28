@@ -64,10 +64,14 @@ function extractDoctor(data: any): DoctorProfile {
 }
 
 function getErrorMessage(error: any, fallback: string) {
+  const errors = error?.response?.data?.errors;
+  const firstError = errors?.[0];
+
   return (
     error?.response?.data?.message ||
-    error?.response?.data?.errors?.[0]?.message ||
-    error?.response?.data?.errors?.[0] ||
+    (typeof firstError === "string"
+      ? firstError
+      : firstError?.message) ||
     fallback
   );
 }
@@ -97,8 +101,10 @@ export default function DoctorProfilePage() {
         setLoading(true);
         setError(null);
 
+        // Backend route:
+        // GET /api/doctors/user/{userId}
         const response = await api.get(
-          `/doctors/${user.id}`
+          `/doctors/user/${user.id}`
         );
 
         const doctor = extractDoctor(response.data);
@@ -194,6 +200,8 @@ export default function DoctorProfilePage() {
     try {
       setSaving(true);
 
+      // Backend route:
+      // PATCH /api/doctors/profile
       const response = await api.patch(
         "/doctors/profile",
         {
@@ -429,7 +437,11 @@ export default function DoctorProfilePage() {
 
               <Input
                 id="name"
-                value={profile?.name || user.name || ""}
+                value={
+                  profile?.name ||
+                  user.name ||
+                  ""
+                }
                 disabled
               />
             </div>
@@ -444,7 +456,9 @@ export default function DoctorProfilePage() {
 
               <Input
                 id="specialty"
-                value={profile?.specialty || ""}
+                value={
+                  profile?.specialty || ""
+                }
                 disabled
               />
             </div>
