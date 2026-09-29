@@ -183,13 +183,12 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
             <React.Fragment key={step}>
               <div className="flex flex-col items-center gap-3">
                 <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-full border-2 text-base font-bold transition-all duration-300 ${
-                    isCompleted
-                      ? "border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-200"
-                      : isActive
+                  className={`flex h-12 w-12 items-center justify-center rounded-full border-2 text-base font-bold transition-all duration-300 ${isCompleted
+                    ? "border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-200"
+                    : isActive
                       ? "border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-200 ring-4 ring-blue-100"
                       : "border-slate-300 bg-white text-slate-400"
-                  }`}
+                    }`}
                 >
                   {isCompleted ? (
                     <Check className="h-6 w-6" strokeWidth={3} />
@@ -198,9 +197,8 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
                   )}
                 </div>
                 <span
-                  className={`text-xs font-semibold uppercase tracking-wide sm:text-sm ${
-                    isCompleted || isActive ? "text-blue-700" : "text-slate-400"
-                  }`}
+                  className={`text-xs font-semibold uppercase tracking-wide sm:text-sm ${isCompleted || isActive ? "text-blue-700" : "text-slate-400"
+                    }`}
                 >
                   {step}
                 </span>
@@ -209,9 +207,8 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
               {index < STEPS.length - 1 && (
                 <div className="relative mx-3 h-1 flex-1 overflow-hidden rounded-full bg-slate-200">
                   <div
-                    className={`h-full rounded-full bg-blue-600 transition-all duration-500 ${
-                      currentStep > stepNumber ? "w-full" : "w-0"
-                    }`}
+                    className={`h-full rounded-full bg-blue-600 transition-all duration-500 ${currentStep > stepNumber ? "w-full" : "w-0"
+                      }`}
                   />
                 </div>
               )}
@@ -329,7 +326,13 @@ export default function AppointmentBookingPage() {
         if (!supabase) throw new Error("Supabase is not configured.");
 
         // 1. Parse the doctor's availability string
-        const allowedDays = parseAvailabilityToDays(selectedDoctor.availability);
+        //    If empty/null → default to all 7 days so booking always works
+        let allowedDays = parseAvailabilityToDays(selectedDoctor.availability);
+
+        if (allowedDays.size === 0) {
+          // Default: doctor available every day of the week
+          allowedDays = new Set(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]);
+        }
 
         // 2. Determine the abbreviation for the selected date's weekday
         const dateObj = new Date(`${selectedDate}T00:00:00`);
@@ -537,9 +540,9 @@ export default function AppointmentBookingPage() {
 
   const availableDoctors = selectedSpecialty
     ? allDoctors.filter(
-        (doctor) =>
-          doctor.specialty.toLowerCase() === selectedSpecialty.name.toLowerCase()
-      )
+      (doctor) =>
+        doctor.specialty.toLowerCase() === selectedSpecialty.name.toLowerCase()
+    )
     : [];
 
   if (dataError) {
@@ -620,11 +623,10 @@ export default function AppointmentBookingPage() {
                           setSelectedTime("");
                           clearFieldError("specialty");
                         }}
-                        className={`group rounded-xl border-2 p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-                          selected
-                            ? "border-blue-600 bg-blue-50 shadow-md"
-                            : "border-slate-200 bg-white hover:border-blue-300"
-                        }`}
+                        className={`group rounded-xl border-2 p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${selected
+                          ? "border-blue-600 bg-blue-50 shadow-md"
+                          : "border-slate-200 bg-white hover:border-blue-300"
+                          }`}
                       >
                         <div className="mb-3 text-3xl">{specialty.icon}</div>
                         <h3 className="font-semibold text-slate-900">{specialty.name}</h3>
@@ -674,11 +676,10 @@ export default function AppointmentBookingPage() {
                           setSelectedTime("");
                           clearFieldError("doctor");
                         }}
-                        className={`flex items-center gap-4 rounded-xl border-2 p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-                          selected
-                            ? "border-blue-600 bg-blue-50 shadow-md"
-                            : "border-slate-200 bg-white hover:border-blue-300"
-                        }`}
+                        className={`flex items-center gap-4 rounded-xl border-2 p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${selected
+                          ? "border-blue-600 bg-blue-50 shadow-md"
+                          : "border-slate-200 bg-white hover:border-blue-300"
+                          }`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -792,11 +793,10 @@ export default function AppointmentBookingPage() {
                             setSelectedTime(time);
                             clearFieldError("time");
                           }}
-                          className={`rounded-lg border-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${
-                            selected
-                              ? "border-blue-600 bg-blue-600 text-white shadow-md"
-                              : "border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-blue-50"
-                          }`}
+                          className={`rounded-lg border-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${selected
+                            ? "border-blue-600 bg-blue-600 text-white shadow-md"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-blue-50"
+                            }`}
                         >
                           {time}
                         </button>
