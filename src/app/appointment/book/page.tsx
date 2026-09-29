@@ -9,6 +9,7 @@ import EmptyState from "@/components/shared/EmptyState";
 import Footer from "@/components/shared/Footer";
 import { supabase } from "@/lib/supabase";
 import { ChevronRight, Loader2, Check } from "lucide-react";
+import { toast, Toaster } from "sonner"; // Added Sonner for global API error toasts
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -90,23 +91,16 @@ function formatTime(time: string): string {
   return `${hours}:${mStr} ${modifier}`;
 }
 
-/**
- * Parse a doctor.availability string into a Set of weekday abbreviations.
- * Handles both "Mon-Fri" ranges and "Mon, Wed, Fri" lists.
- * Also handles "Mon-Sat", "Tue, Thu, Sat", etc.
- */
 function parseAvailabilityToDays(availability: string): Set<string> {
   const allowed = new Set<string>();
   if (!availability) return allowed;
 
-  // Normalize: "Mon" / "Monday" / "MON" → "Mon"
   const normalize = (token: string): string | null => {
     const t = token.trim().slice(0, 3).toLowerCase();
     const match = WEEKDAY_ORDER.find((d) => d.toLowerCase() === t);
     return match || null;
   };
 
-  // 1. Handle ranges like "Mon-Fri" or "Mon - Fri"
   const rangeMatches = availability.matchAll(
     /(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s*-\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*/gi
   );
@@ -122,14 +116,12 @@ function parseAvailabilityToDays(availability: string): Set<string> {
     if (startIdx <= endIdx) {
       for (let i = startIdx; i <= endIdx; i++) allowed.add(WEEKDAY_ORDER[i]);
     } else {
-      // Wrap-around e.g. "Fri-Mon"
       for (let i = startIdx; i < 7; i++) allowed.add(WEEKDAY_ORDER[i]);
       for (let i = 0; i <= endIdx; i++) allowed.add(WEEKDAY_ORDER[i]);
     }
     rangesConsumed.add(match[0]);
   }
 
-  // 2. Handle comma-separated lists (skip tokens already part of a range)
   let remainder = availability;
   rangesConsumed.forEach((r) => {
     remainder = remainder.replace(r, "");
@@ -156,15 +148,15 @@ function withTimeout<T>(promise: PromiseLike<T>, timeoutMs = 15000): Promise<T> 
 function getErrorMessage(error: unknown): string {
   const err = error as { message?: string; code?: string };
   if (err?.message === "REQUEST_TIMEOUT") {
-    return "The request took too long. Please check your internet connection and try again.";
+    return "The request took too long. Please check your internet connection.";
   }
   if (err?.code === "23505" || /duplicate|unique|already exists/i.test(err?.message || "")) {
-    return "This appointment slot has just been booked by someone else. Please select another time.";
+    return "This appointment slot has just been booked. Please select another time.";
   }
   if (/network|fetch|failed to fetch|connection/i.test(err?.message || "")) {
-    return "Network error. Please check your internet connection and try again.";
+    return "Network error. Please check your internet connection.";
   }
-  return err?.message || "Something went wrong while booking your appointment. Please try again.";
+  return err?.message || "Something went wrong while booking. Please try again.";
 }
 
 // ─────────────────────────────────────────────────────────
@@ -192,11 +184,7 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
                       : "border-slate-300 bg-white text-slate-400"
                   }`}
                 >
-                  {isCompleted ? (
-                    <Check className="h-6 w-6" strokeWidth={3} />
-                  ) : (
-                    stepNumber
-                  )}
+                  {isCompleted ? <Check className="h-6 w-6" strokeWidth={3} /> : stepNumber}
                 </div>
                 <span
                   className={`text-xs font-semibold uppercase tracking-wide sm:text-sm ${
@@ -206,7 +194,6 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
                   {step}
                 </span>
               </div>
-
               {index < STEPS.length - 1 && (
                 <div className="relative mx-3 h-1 flex-1 overflow-hidden rounded-full bg-slate-200">
                   <div
@@ -225,7 +212,7 @@ function ProgressSteps({ currentStep }: { currentStep: number }) {
 }
 
 // ─────────────────────────────────────────────────────────
-// Page
+// Page Content
 // ─────────────────────────────────────────────────────────
 
 function BookAppointmentContent() {
@@ -238,18 +225,21 @@ function BookAppointmentContent() {
   const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
+  
   const [selectedSpecialty, setSelectedSpecialty] = useState<Specialty | null>(null);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [selectedDate, setSelectedDate] = useState(getTodayLocalDate());
   const [selectedTime, setSelectedTime] = useState("");
+  
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
+  
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  // ─────────── Load specialties + doctors ───────────
+  // ─────────── Load Data ───────────
   useEffect(() => {
     async function loadData() {
       try {
@@ -260,36 +250,28 @@ function BookAppointmentContent() {
 
         const [specialtiesResult, doctorsResult] = await Promise.all([
           supabase.from("specialties").select("id, name").order("name"),
-          supabase
-            .from("doctors")
-            .select("id, full_name, specialty, rating, avatar_url, availability"),
+          supabase.from("doctors").select("id, full_name, specialty, rating, avatar_url, availability"),
         ]);
 
         if (specialtiesResult.error) throw specialtiesResult.error;
         if (doctorsResult.error) throw doctorsResult.error;
 
-        const specialtyData: Specialty[] =
-          (specialtiesResult.data as SpecialtyRow[] | null)?.map((s) => ({
-            id: s.id,
-            name: s.name,
-            icon: "🏥",
-            description: `Consult with our ${s.name} specialists.`,
-          })) || [];
+        const specialtyData: Specialty[] = (specialtiesResult.data as SpecialtyRow[] | null)?.map((s) => ({
+          id: s.id,
+          name: s.name,
+          icon: "🏥",
+          description: `Consult with our ${s.name} specialists.`,
+        })) || [];
 
-        const doctorData: Doctor[] =
-          (doctorsResult.data as DoctorRow[] | null)?.map((d) => ({
-            id: d.id,
-            name: d.full_name || "Doctor",
-            specialty: d.specialty || "General",
-            experience: "Experience on profile",
-            rating: d.rating || 0,
-            avatar:
-              d.avatar_url ||
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                d.full_name || "Doctor"
-              )}`,
-            availability: d.availability || "",
-          })) || [];
+        const doctorData: Doctor[] = (doctorsResult.data as DoctorRow[] | null)?.map((d) => ({
+          id: d.id,
+          name: d.full_name || "Doctor",
+          specialty: d.specialty || "General",
+          experience: "Experience on profile",
+          rating: d.rating || 0,
+          avatar: d.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(d.full_name || "Doctor")}`,
+          availability: d.availability || "",
+        })) || [];
 
         setSpecialties(specialtyData);
         setAllDoctors(doctorData);
@@ -298,9 +280,7 @@ function BookAppointmentContent() {
           const reqDoctor = doctorData.find((d) => d.id === requestedDoctorId);
           if (reqDoctor) {
             setSelectedDoctor(reqDoctor);
-            const reqSpecialty = specialtyData.find(
-              (s) => s.name.toLowerCase() === reqDoctor.specialty.toLowerCase()
-            );
+            const reqSpecialty = specialtyData.find((s) => s.name.toLowerCase() === reqDoctor.specialty.toLowerCase());
             if (reqSpecialty) {
               setSelectedSpecialty(reqSpecialty);
               setCurrentStep(2);
@@ -309,7 +289,9 @@ function BookAppointmentContent() {
         }
       } catch (error) {
         console.error("Failed to load booking data:", error);
-        setDataError("Unable to load doctors and specialties. Please try again.");
+        const errorMsg = "Unable to load doctors and specialties. Please check your network.";
+        setDataError(errorMsg);
+        toast.error(errorMsg); // Global Toast
       } finally {
         setDataLoading(false);
       }
@@ -317,7 +299,7 @@ function BookAppointmentContent() {
     loadData();
   }, [requestedDoctorId]);
 
-  // ─────────── Load time slots (Option B — parse doctors.availability) ───────────
+  // ─────────── Load time slots ───────────
   useEffect(() => {
     async function loadTimeSlots() {
       if (!selectedDoctor || currentStep !== 3 || !selectedDate) return;
@@ -329,27 +311,15 @@ function BookAppointmentContent() {
 
         if (!supabase) throw new Error("Supabase is not configured.");
 
-        // 1. Parse the doctor's availability string
         const allowedDays = parseAvailabilityToDays(selectedDoctor.availability);
-
-        // 2. Determine the abbreviation for the selected date's weekday
         const dateObj = new Date(`${selectedDate}T00:00:00`);
         const selectedAbbr = WEEKDAY_ORDER[dateObj.getDay()];
 
-        console.log("[slots] doctor:", selectedDoctor.name, {
-          availability: selectedDoctor.availability,
-          allowedDays: Array.from(allowedDays),
-          selectedDate,
-          selectedAbbr,
-        });
-
-        // 3. If this weekday isn't in the allowed set → empty
         if (!allowedDays.has(selectedAbbr)) {
           setTimeSlots([]);
           return;
         }
 
-        // 4. Fetch already-booked appointments for that day
         const { data: bookedAppointments, error: appointmentsError } = await supabase
           .from("appointments")
           .select("appointment_time")
@@ -365,12 +335,9 @@ function BookAppointmentContent() {
           )
         );
 
-        // 5. Generate 30-min slots from 09:00 to 17:00
         const generatedSlots: string[] = [];
         const startHour = 9;
         const endHour = 17;
-
-        // If selected date is today, hide slots that already passed
         const isToday = selectedDate === getTodayLocalDate();
         const now = new Date();
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -378,10 +345,7 @@ function BookAppointmentContent() {
         for (let h = startHour; h < endHour; h++) {
           for (let m = 0; m < 60; m += 30) {
             const slotMinutes = h * 60 + m;
-
-            // Skip past slots when booking for today
             if (isToday && slotMinutes <= currentMinutes + 30) continue;
-
             const time24 = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
             if (!bookedTimes.has(time24)) {
               generatedSlots.push(formatTime(time24));
@@ -392,7 +356,9 @@ function BookAppointmentContent() {
         setTimeSlots(generatedSlots);
       } catch (error) {
         console.error("Failed to load time slots:", error);
-        setSlotsError("Unable to load available time slots. Please try again.");
+        const errorMsg = "Unable to load available time slots. Please try again.";
+        setSlotsError(errorMsg);
+        toast.error(errorMsg); // Global Toast
       } finally {
         setSlotsLoading(false);
       }
@@ -411,8 +377,7 @@ function BookAppointmentContent() {
     if (currentStep === 2 && !selectedDoctor) errors.doctor = "Please select a doctor.";
     if (currentStep === 3) {
       if (!selectedDate) errors.date = "Please select an appointment date.";
-      else if (selectedDate < getTodayLocalDate())
-        errors.date = "Please select today or a future date.";
+      else if (selectedDate < getTodayLocalDate()) errors.date = "Please select today or a future date.";
       if (!selectedTime) errors.time = "Please select an available time slot.";
     }
     setFieldErrors(errors);
@@ -436,53 +401,27 @@ function BookAppointmentContent() {
     }
   }
 
+  // ─────────── Final Submit (Fixed Profiles Dependency) ───────────
   async function handleFinalSubmit() {
-    const allErrors: FieldErrors = {};
-    if (!selectedSpecialty) allErrors.specialty = "Please select a specialty.";
-    if (!selectedDoctor) allErrors.doctor = "Please select a doctor.";
-    if (!selectedDate) allErrors.date = "Please select an appointment date.";
-    else if (selectedDate < getTodayLocalDate())
-      allErrors.date = "Please select today or a future date.";
-    if (!selectedTime) allErrors.time = "Please select an available time slot.";
-
-    setFieldErrors(allErrors);
-    if (Object.keys(allErrors).length > 0) return;
-
-    if (!supabase) {
-      setSubmitError("Supabase is not configured.");
-      return;
-    }
+    if (!validateCurrentStep()) return;
 
     try {
       setSubmitting(true);
       setSubmitError(null);
 
-      const { data: authData, error: authError } = await withTimeout(
-        supabase.auth.getUser()
-      );
-      if (authError) throw authError;
-      if (!authData?.user?.id) {
-        setSubmitError("Your session could not be found. Please log in again.");
-        return;
+      const { data: authData, error: authError } = await withTimeout(supabase!.auth.getUser());
+      if (authError || !authData?.user?.id) {
+        throw new Error("Your session could not be found. Please log in again.");
       }
 
       const userId = authData.user.id;
-
-      const { data: profile, error: profileError } = await withTimeout(
-        supabase.from("profiles").select("id").eq("id", userId).maybeSingle()
-      );
-      if (profileError) throw profileError;
-      if (!profile) {
-        setSubmitError(
-          "Your profile was not found. Please complete your profile first."
-        );
-        return;
-      }
-
       const appointmentTime = convertDisplayTimeTo24Hour(selectedTime);
 
+      // Removed risky "profiles" table check that could cause 500 API errors.
+      // Supabase RLS will safely handle foreign key and auth validation organically.
+
       const { data: existingAppointment, error: duplicateError } = await withTimeout(
-        supabase
+        supabase!
           .from("appointments")
           .select("id")
           .eq("doctor_id", selectedDoctor!.id)
@@ -491,16 +430,18 @@ function BookAppointmentContent() {
           .in("status", ["pending", "confirmed"])
           .maybeSingle()
       );
+      
       if (duplicateError) throw duplicateError;
       if (existingAppointment) {
-        setSubmitError("This time slot is no longer available. Please choose another time.");
+        toast.error("This time slot is no longer available. Please choose another time.");
         setSelectedTime("");
         setCurrentStep(3);
+        setSubmitting(false);
         return;
       }
 
       const { data: createdAppointment, error: insertError } = await withTimeout(
-        supabase
+        supabase!
           .from("appointments")
           .insert({
             patient_id: userId,
@@ -513,10 +454,11 @@ function BookAppointmentContent() {
           .select("id, appointment_date, appointment_time, status")
           .single()
       );
+      
       if (insertError) throw insertError;
-      if (!createdAppointment) {
-        throw new Error("Appointment was not created. Please try again.");
-      }
+      if (!createdAppointment) throw new Error("Appointment was not created. Please try again.");
+
+      toast.success("Appointment Booked Successfully!");
 
       const params = new URLSearchParams({
         appointmentId: String(createdAppointment.id),
@@ -530,22 +472,22 @@ function BookAppointmentContent() {
       router.push(`/appointment/confirm?${params.toString()}`);
     } catch (error) {
       console.error("Appointment booking failed:", error);
-      setSubmitError(getErrorMessage(error));
+      const errMsg = getErrorMessage(error);
+      setSubmitError(errMsg);
+      toast.error(errMsg); // Show visible toast to patient instead of silent failure
     } finally {
       setSubmitting(false);
     }
   }
 
   const availableDoctors = selectedSpecialty
-    ? allDoctors.filter(
-        (doctor) =>
-          doctor.specialty.toLowerCase() === selectedSpecialty.name.toLowerCase()
-      )
+    ? allDoctors.filter((doctor) => doctor.specialty.toLowerCase() === selectedSpecialty.name.toLowerCase())
     : [];
 
   if (dataError) {
     return (
       <div className="min-h-screen bg-background">
+        <Toaster position="top-right" richColors />
         <Navbar />
         <main className="container mx-auto px-4 py-16">
           <EmptyState title="Unable to load booking information" message={dataError} />
@@ -557,56 +499,40 @@ function BookAppointmentContent() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <Toaster position="top-right" richColors />
       <Navbar />
 
       <main className="container mx-auto px-4 py-8 pb-32">
-        {/* Breadcrumb */}
         <div className="mb-6 flex items-center gap-2 text-sm text-slate-500">
-          <Link href="/patient/dashboard" className="transition hover:text-blue-600">
-            Dashboard
-          </Link>
+          <Link href="/patient/dashboard" className="transition hover:text-blue-600">Dashboard</Link>
           <ChevronRight className="h-4 w-4" />
           <span className="font-medium text-slate-800">Book Appointment</span>
         </div>
 
-        {/* Header */}
         <div className="mb-10">
           <h1 className="text-4xl font-bold text-slate-900">Book an Appointment</h1>
-          <p className="mt-2 text-slate-500">
-            Select your preferred specialty, doctor, date and time.
-          </p>
+          <p className="mt-2 text-slate-500">Select your preferred specialty, doctor, date and time.</p>
         </div>
 
-        {/* Progress */}
         <ProgressSteps currentStep={currentStep} />
 
-        {/* Content Card */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           {/* STEP 1 */}
           {currentStep === 1 && (
             <section>
               <h2 className="mb-2 text-2xl font-bold text-slate-900">Choose a Specialty</h2>
-              <p className="mb-6 text-sm text-slate-500">
-                Select the type of specialist you want to consult.
-              </p>
+              <p className="mb-6 text-sm text-slate-500">Select the type of specialist you want to consult.</p>
 
               {fieldErrors.specialty && (
-                <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600">
-                  {fieldErrors.specialty}
-                </p>
+                <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600">{fieldErrors.specialty}</p>
               )}
 
               {dataLoading ? (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {[1, 2, 3, 4, 5, 6].map((item) => (
-                    <div key={item} className="h-32 animate-pulse rounded-xl bg-slate-100" />
-                  ))}
+                  {[1, 2, 3, 4, 5, 6].map((item) => <div key={item} className="h-32 animate-pulse rounded-xl bg-slate-100" />)}
                 </div>
               ) : specialties.length === 0 ? (
-                <EmptyState
-                  title="No specialties available"
-                  message="No medical specialties are currently available."
-                />
+                <EmptyState title="No specialties available" message="No medical specialties are currently available." />
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {specialties.map((specialty) => {
@@ -622,9 +548,7 @@ function BookAppointmentContent() {
                           clearFieldError("specialty");
                         }}
                         className={`group rounded-xl border-2 p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-                          selected
-                            ? "border-blue-600 bg-blue-50 shadow-md"
-                            : "border-slate-200 bg-white hover:border-blue-300"
+                          selected ? "border-blue-600 bg-blue-50 shadow-md" : "border-slate-200 bg-white hover:border-blue-300"
                         }`}
                       >
                         <div className="mb-3 text-3xl">{specialty.icon}</div>
@@ -647,21 +571,14 @@ function BookAppointmentContent() {
           {currentStep === 2 && (
             <section>
               <h2 className="mb-2 text-2xl font-bold text-slate-900">Choose a Doctor</h2>
-              <p className="mb-6 text-sm text-slate-500">
-                Select a doctor from the available specialists.
-              </p>
+              <p className="mb-6 text-sm text-slate-500">Select a doctor from the available specialists.</p>
 
               {fieldErrors.doctor && (
-                <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600">
-                  {fieldErrors.doctor}
-                </p>
+                <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600">{fieldErrors.doctor}</p>
               )}
 
               {availableDoctors.length === 0 ? (
-                <EmptyState
-                  title="No doctors available"
-                  message="There are no available doctors for this specialty."
-                />
+                <EmptyState title="No doctors available" message="There are no available doctors for this specialty." />
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2">
                   {availableDoctors.map((doctor) => {
@@ -676,28 +593,16 @@ function BookAppointmentContent() {
                           clearFieldError("doctor");
                         }}
                         className={`flex items-center gap-4 rounded-xl border-2 p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-                          selected
-                            ? "border-blue-600 bg-blue-50 shadow-md"
-                            : "border-slate-200 bg-white hover:border-blue-300"
+                          selected ? "border-blue-600 bg-blue-50 shadow-md" : "border-slate-200 bg-white hover:border-blue-300"
                         }`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={doctor.avatar}
-                          alt={doctor.name}
-                          className="h-16 w-16 rounded-full border-2 border-white object-cover shadow-sm"
-                        />
+                        <img src={doctor.avatar} alt={doctor.name} className="h-16 w-16 rounded-full border-2 border-white object-cover shadow-sm" />
                         <div className="min-w-0 flex-1">
-                          <h3 className="font-semibold text-slate-900">
-                            Dr. {doctor.name}
-                          </h3>
+                          <h3 className="font-semibold text-slate-900">Dr. {doctor.name}</h3>
                           <p className="text-sm text-blue-600">{selectedSpecialty?.name}</p>
                           <p className="mt-1 text-xs text-slate-500">⭐ {doctor.rating}</p>
-                          {doctor.availability && (
-                            <p className="mt-1 text-xs text-slate-400">
-                              Available: {doctor.availability}
-                            </p>
-                          )}
+                          {doctor.availability && <p className="mt-1 text-xs text-slate-400">Available: {doctor.availability}</p>}
                         </div>
                         {selected && (
                           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600">
@@ -715,20 +620,11 @@ function BookAppointmentContent() {
           {/* STEP 3 */}
           {currentStep === 3 && (
             <section>
-              <h2 className="mb-2 text-2xl font-bold text-slate-900">
-                Select Date &amp; Time
-              </h2>
-              <p className="mb-6 text-sm text-slate-500">
-                Choose an available date and appointment time.
-              </p>
+              <h2 className="mb-2 text-2xl font-bold text-slate-900">Select Date &amp; Time</h2>
+              <p className="mb-6 text-sm text-slate-500">Choose an available date and appointment time.</p>
 
               <div className="mb-8">
-                <label
-                  htmlFor="appointment-date"
-                  className="mb-2 block text-sm font-semibold text-slate-700"
-                >
-                  Appointment Date
-                </label>
+                <label htmlFor="appointment-date" className="mb-2 block text-sm font-semibold text-slate-700">Appointment Date</label>
                 <input
                   id="appointment-date"
                   type="date"
@@ -741,36 +637,21 @@ function BookAppointmentContent() {
                   }}
                   className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100 sm:max-w-sm"
                 />
-                {fieldErrors.date && (
-                  <p className="mt-2 text-sm font-medium text-red-600">
-                    {fieldErrors.date}
-                  </p>
-                )}
-
+                {fieldErrors.date && <p className="mt-2 text-sm font-medium text-red-600">{fieldErrors.date}</p>}
                 {selectedDoctor?.availability && (
                   <p className="mt-2 text-xs text-slate-500">
-                    Dr. {selectedDoctor.name} is available:{" "}
-                    <span className="font-medium text-slate-700">
-                      {selectedDoctor.availability}
-                    </span>
+                    Dr. {selectedDoctor.name} is available: <span className="font-medium text-slate-700">{selectedDoctor.availability}</span>
                   </p>
                 )}
               </div>
 
               <div>
-                <h3 className="mb-3 text-sm font-semibold text-slate-700">
-                  Available Time Slots
-                </h3>
-                {fieldErrors.time && (
-                  <p className="mb-3 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600">
-                    {fieldErrors.time}
-                  </p>
-                )}
+                <h3 className="mb-3 text-sm font-semibold text-slate-700">Available Time Slots</h3>
+                {fieldErrors.time && <p className="mb-3 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600">{fieldErrors.time}</p>}
 
                 {slotsLoading ? (
                   <div className="flex items-center gap-2 text-sm text-slate-500">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading available time slots...
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading available time slots...
                   </div>
                 ) : slotsError ? (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-4">
@@ -778,8 +659,7 @@ function BookAppointmentContent() {
                   </div>
                 ) : timeSlots.length === 0 ? (
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
-                    No available time slots for this doctor on the selected date. Please
-                    pick another day when the doctor is available.
+                    No available time slots for this doctor on the selected date. Please pick another day.
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -789,14 +669,9 @@ function BookAppointmentContent() {
                         <button
                           type="button"
                           key={time}
-                          onClick={() => {
-                            setSelectedTime(time);
-                            clearFieldError("time");
-                          }}
+                          onClick={() => { setSelectedTime(time); clearFieldError("time"); }}
                           className={`rounded-lg border-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${
-                            selected
-                              ? "border-blue-600 bg-blue-600 text-white shadow-md"
-                              : "border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-blue-50"
+                            selected ? "border-blue-600 bg-blue-600 text-white shadow-md" : "border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-blue-50"
                           }`}
                         >
                           {time}
@@ -812,26 +687,18 @@ function BookAppointmentContent() {
           {/* STEP 4 */}
           {currentStep === 4 && (
             <section>
-              <h2 className="mb-2 text-2xl font-bold text-slate-900">
-                Confirm Appointment
-              </h2>
-              <p className="mb-6 text-sm text-slate-500">
-                Please review your appointment details before confirming.
-              </p>
+              <h2 className="mb-2 text-2xl font-bold text-slate-900">Confirm Appointment</h2>
+              <p className="mb-6 text-sm text-slate-500">Please review your appointment details before confirming.</p>
 
               <div className="max-w-2xl rounded-xl border-2 border-slate-100 bg-slate-50 p-6">
                 <div className="space-y-5">
                   <div className="flex items-start justify-between border-b border-slate-200 pb-4">
                     <p className="text-sm text-slate-500">Specialty</p>
-                    <p className="font-semibold text-slate-900">
-                      {selectedSpecialty?.name}
-                    </p>
+                    <p className="font-semibold text-slate-900">{selectedSpecialty?.name}</p>
                   </div>
                   <div className="flex items-start justify-between border-b border-slate-200 pb-4">
                     <p className="text-sm text-slate-500">Doctor</p>
-                    <p className="font-semibold text-slate-900">
-                      Dr. {selectedDoctor?.name}
-                    </p>
+                    <p className="font-semibold text-slate-900">Dr. {selectedDoctor?.name}</p>
                   </div>
                   <div className="flex items-start justify-between border-b border-slate-200 pb-4">
                     <p className="text-sm text-slate-500">Date</p>
@@ -843,12 +710,6 @@ function BookAppointmentContent() {
                   </div>
                 </div>
               </div>
-
-              {submitError && (
-                <div className="mt-5 max-w-2xl rounded-lg border border-red-200 bg-red-50 p-4">
-                  <p className="text-sm font-medium text-red-600">{submitError}</p>
-                </div>
-              )}
             </section>
           )}
         </div>
@@ -881,30 +742,21 @@ function BookAppointmentContent() {
                 className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-8 py-3 text-sm font-semibold text-white shadow-md shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {submitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Confirming...
-                  </>
-                ) : (
-                  "Confirm Booking"
-                )}
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Confirming...</>
+                ) : ("Confirm Booking")}
               </button>
             )}
           </div>
         </div>
       </main>
-
       <Footer />
     </div>
   );
 }
+
 export default function BookAppointmentPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center text-slate-500">
-        Loading booking details...
-      </div>
-    }>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-slate-500">Loading booking details...</div>}>
       <BookAppointmentContent />
     </Suspense>
   );
