@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { Suspense, useEffect, useState, useMemo } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Navbar from "@/components/shared/Navbar";
 import DoctorCard from "@/components/doctors/DoctorCard";
-// Fixed import typo: Using DoctorSkeleton instead of DoctorsSkeleton based on your code block
 import DoctorSkeleton from "@/components/doctors/DoctorSkeleton";
 import EmptyDoctors from "@/components/doctors/EmptyDoctors";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -25,17 +25,39 @@ function getSpecialtyName(row: DoctorRow): string {
   return row.specialty ?? "General";
 }
 
+// Main Page Component with Suspense (Required for useSearchParams)
 export default function DoctorDirectoryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 py-24 px-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="h-8 w-64 rounded bg-slate-200 animate-pulse" />
+            <div className="mt-4 h-4 w-96 rounded bg-slate-100 animate-pulse" />
+          </div>
+        </div>
+      }
+    >
+      <DoctorDirectoryContent />
+    </Suspense>
+  );
+}
+
+function DoctorDirectoryContent() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
   const dashboardHref = user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard";
 
-  // States for search & filter
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSpecialty, setSelectedSpecialty] = useState("");
-  
+  // Initialize state from URL params if they exist
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
+  const [selectedSpecialty, setSelectedSpecialty] = useState(searchParams.get("specialty") ?? "");
+
   // Data States
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
-  const [allDoctors, setAllDoctors] = useState<Doctor[]>([]); // Store original list
+  const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
   const [specialtiesLoading, setSpecialtiesLoading] = useState(true);
   const [doctorsError, setDoctorsError] = useState(false);
@@ -43,6 +65,15 @@ export default function DoctorDirectoryPage() {
   const [doctorsRetryKey, setDoctorsRetryKey] = useState(0);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
+
+  // Sync state to URL whenever search or specialty changes
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set("q", searchQuery);
+    if (selectedSpecialty) params.set("specialty", selectedSpecialty);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [searchQuery, selectedSpecialty, pathname, router]);
 
   // Load Specialties
   useEffect(() => {
@@ -71,7 +102,7 @@ export default function DoctorDirectoryPage() {
     return () => { isMounted = false; };
   }, []);
 
-  // Load Doctors (Initial Fetch)
+  // Load ALL Doctors (Initial Fetch)
   useEffect(() => {
     let isMounted = true;
     const loadDoctors = async () => {
@@ -86,8 +117,7 @@ export default function DoctorDirectoryPage() {
       try {
         setLoading(true);
         setDoctorsError(false);
-        
-        // Fetch ALL doctors with role='doctor'
+
         const { data, error } = await supabase
           .from("doctors")
           .select("id, full_name, specialty, rating, avatar_url")
@@ -126,10 +156,10 @@ export default function DoctorDirectoryPage() {
     if (selectedSpecialtyName) {
       filtered = filtered.filter(doc => doc.specialty === selectedSpecialtyName);
     }
-    
+
     if (searchTerm) {
-      filtered = filtered.filter(doc => 
-        doc.name.toLowerCase().includes(searchTerm) || 
+      filtered = filtered.filter(doc =>
+        doc.name.toLowerCase().includes(searchTerm) ||
         doc.specialty.toLowerCase().includes(searchTerm)
       );
     }
@@ -146,11 +176,15 @@ export default function DoctorDirectoryPage() {
       <Navbar />
       <div className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-6xl mx-auto space-y-8">
-          
-          <Link href={dashboardHref} aria-label="Back to your dashboard" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-500 text-slate-200 transition-colors hover:bg-blue-700 hover:text-white px-4">
+
+          <Link
+            href={dashboardHref}
+            aria-label="Back to your dashboard"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-500 text-slate-200 transition-colors hover:bg-blue-700 hover:text-white px-4"
+          >
             <span aria-hidden="true">&larr;</span> Go to Dashboard
           </Link>
-          
+
           <div className="space-y-3">
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Doctor Directory</h1>
             <p className="text-sm text-slate-500 max-w-xl">

@@ -409,7 +409,7 @@ function BookAppointmentContent() {
       setSubmitting(true);
       setSubmitError(null);
 
-      const { data: authData, error: authError } = await withTimeout(supabase.auth.getUser());
+      const { data: authData, error: authError } = await withTimeout(supabase!.auth.getUser());
       if (authError || !authData?.user?.id) {
         throw new Error("Your session could not be found. Please log in again.");
       }
@@ -421,7 +421,7 @@ function BookAppointmentContent() {
       // Supabase RLS will safely handle foreign key and auth validation organically.
 
       const { data: existingAppointment, error: duplicateError } = await withTimeout(
-        supabase
+        supabase!
           .from("appointments")
           .select("id")
           .eq("doctor_id", selectedDoctor!.id)
@@ -441,7 +441,7 @@ function BookAppointmentContent() {
       }
 
       const { data: createdAppointment, error: insertError } = await withTimeout(
-        supabase
+        supabase!
           .from("appointments")
           .insert({
             patient_id: userId,
