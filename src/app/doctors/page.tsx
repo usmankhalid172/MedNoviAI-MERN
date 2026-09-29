@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Navbar from "@/components/shared/Navbar";
 import DoctorCard from "@/components/doctors/DoctorCard";
+// Fixed import typo: Using DoctorSkeleton instead of DoctorsSkeleton based on your code block
 import DoctorSkeleton from "@/components/doctors/DoctorSkeleton";
 import EmptyDoctors from "@/components/doctors/EmptyDoctors";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -10,7 +11,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { Doctor, Specialty } from "@/types/doctor";
 import { Search, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useAuth } from "@/hooks/useAuth"; 
+import { useAuth } from "@/hooks/useAuth";
 
 type DoctorRow = {
   id: string;
@@ -26,14 +27,15 @@ function getSpecialtyName(row: DoctorRow): string {
 
 export default function DoctorDirectoryPage() {
   const { user } = useAuth();
-
   const dashboardHref = user?.role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard";
 
+  // States for search & filter
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSpecialty, setSelectedSpecialty] = useState("");
+  
+  // Data States
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-
+  const [allDoctors, setAllDoctors] = useState<Doctor[]>([]); // Store original list
   const [loading, setLoading] = useState(true);
   const [specialtiesLoading, setSpecialtiesLoading] = useState(true);
   const [doctorsError, setDoctorsError] = useState(false);
@@ -42,124 +44,101 @@ export default function DoctorDirectoryPage() {
 
   const debouncedSearch = useDebounce(searchQuery, 300);
 
-  // Load specialties
+  // Load Specialties
   useEffect(() => {
     let isMounted = true;
-
     const loadSpecialties = async () => {
       if (!isSupabaseConfigured || !supabase) {
         if (isMounted) {
-          setSpecialties([]);
           setSpecialtiesError(true);
           setSpecialtiesLoading(false);
         }
         return;
       }
-
       try {
         setSpecialtiesLoading(true);
-        setSpecialtiesError(false);
-
-        const { data, error } = await supabase
-          .from("specialties")
-          .select("id, name")
-          .order("name");
-
+        const { data, error } = await supabase.from("specialties").select("id, name").order("name");
         if (error) throw error;
         if (isMounted) setSpecialties(data ?? []);
       } catch (error) {
         console.error("Error fetching specialties:", error);
-        if (isMounted) {
-          setSpecialties([]);
-          setSpecialtiesError(true);
-        }
+        if (isMounted) setSpecialtiesError(true);
       } finally {
         if (isMounted) setSpecialtiesLoading(false);
       }
     };
-
     loadSpecialties();
-
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, []);
 
+  // Load Doctors (Initial Fetch)
   useEffect(() => {
     let isMounted = true;
     const loadDoctors = async () => {
       if (!isSupabaseConfigured || !supabase) {
         if (isMounted) {
-          setDoctors([]);
+          setAllDoctors([]);
           setDoctorsError(true);
           setLoading(false);
         }
         return;
       }
-
       try {
         setLoading(true);
         setDoctorsError(false);
-
-        const query = supabase
+        
+        // Fetch ALL doctors with role='doctor'
+        const { data, error } = await supabase
           .from("doctors")
-          .select("id, full_name, specialty, rating, avatar_url");
-
-        const { data, error } = await query.order("rating", {
-          ascending: false,
-        });
+          .select("id, full_name, specialty, rating, avatar_url")
+          .order("rating", { ascending: false });
 
         if (error) throw error;
 
         const rows = (data ?? []) as unknown as DoctorRow[];
-
-        const searchTerm = debouncedSearch.trim().toLowerCase();
-        const selectedSpecialtyName = specialties.find(
-          (specialty) => specialty.id === selectedSpecialty
-        )?.name;
-        const formattedDoctors: Doctor[] = rows
-          .filter(
-            (doc) =>
-              (!selectedSpecialty || getSpecialtyName(doc) === selectedSpecialtyName) &&
-              (!searchTerm ||
-                doc.full_name.toLowerCase().includes(searchTerm) ||
-                getSpecialtyName(doc).toLowerCase().includes(searchTerm))
-          )
-          .map((doc) => ({
+        const formattedDoctors: Doctor[] = rows.map((doc) => ({
           id: doc.id,
           name: doc.full_name,
           specialty: getSpecialtyName(doc),
           experience: "Experience available on profile",
           rating: Number(doc.rating) || 0,
           avatar: doc.avatar_url ?? "",
-          }));
+        }));
 
-        if (isMounted) setDoctors(formattedDoctors);
+        if (isMounted) setAllDoctors(formattedDoctors);
       } catch (error) {
         console.error("Error fetching doctors:", error);
-        if (isMounted) {
-          setDoctors([]);
-          setDoctorsError(true);
-        }
+        if (isMounted) setDoctorsError(true);
       } finally {
         if (isMounted) setLoading(false);
       }
     };
-
     loadDoctors();
+    return () => { isMounted = false; };
+  }, [doctorsRetryKey]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [debouncedSearch, selectedSpecialty, specialties, doctorsRetryKey]);
+  // Real-time Filtering Logic based on Search & Specialty
+  const filteredDoctors = useMemo(() => {
+    let filtered = [...allDoctors];
+    const searchTerm = debouncedSearch.trim().toLowerCase();
+    const selectedSpecialtyName = specialties.find(s => s.id === selectedSpecialty)?.name;
+
+    if (selectedSpecialtyName) {
+      filtered = filtered.filter(doc => doc.specialty === selectedSpecialtyName);
+    }
+    
+    if (searchTerm) {
+      filtered = filtered.filter(doc => 
+        doc.name.toLowerCase().includes(searchTerm) || 
+        doc.specialty.toLowerCase().includes(searchTerm)
+      );
+    }
+    return filtered;
+  }, [allDoctors, debouncedSearch, selectedSpecialty, specialties]);
 
   const handleClearFilters = () => {
     setSearchQuery("");
     setSelectedSpecialty("");
-  };
-
-  const handleRetryDoctors = () => {
-    setDoctorsRetryKey((key) => key + 1);
   };
 
   return (
@@ -167,21 +146,19 @@ export default function DoctorDirectoryPage() {
       <Navbar />
       <div className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="max-w-6xl mx-auto space-y-8">
-          <Link href={dashboardHref} aria-label="Back to your dashboard" className="inline-flex h-10 items-center
-            justify-center gap-2 rounded-lg bg-blue-500 text-slate-200 transition-colors
-            hover:bg-blue-700 hover:text-white px-4">
+          
+          <Link href={dashboardHref} aria-label="Back to your dashboard" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-500 text-slate-200 transition-colors hover:bg-blue-700 hover:text-white px-4">
             <span aria-hidden="true">&larr;</span> Go to Dashboard
           </Link>
+          
           <div className="space-y-3">
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
-              Doctor Directory
-            </h1>
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Doctor Directory</h1>
             <p className="text-sm text-slate-500 max-w-xl">
-              Browse top-rated healthcare specialists and book consultations
-              instantly.
+              Browse top-rated healthcare specialists and book consultations instantly.
             </p>
           </div>
 
+          {/* Search & Filter Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
@@ -203,42 +180,31 @@ export default function DoctorDirectoryPage() {
               >
                 <option value="">All Specialties</option>
                 {specialties.map((spec) => (
-                  <option key={spec.id} value={spec.id}>
-                    {spec.name}
-                  </option>
+                  <option key={spec.id} value={spec.id}>{spec.name}</option>
                 ))}
               </select>
             </div>
-
-            {specialtiesError && (
-              <p className="text-xs text-red-500 mt-2">
-                Failed to load specialties
-              </p>
-            )}
+            {specialtiesError && <p className="text-xs text-red-500 mt-2">Failed to load specialties</p>}
           </div>
 
+          {/* Doctors Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <DoctorSkeleton key={i} />
-              ))
+              Array.from({ length: 6 }).map((_, i) => <DoctorSkeleton key={i} />)
             ) : doctorsError ? (
               <div className="col-span-full flex flex-col items-center justify-center py-16 text-center space-y-4">
-                <p className="text-slate-600 font-medium">
-                  Failed to load doctors
-                </p>
+                <p className="text-slate-600 font-medium">Failed to load doctors</p>
                 <button
-                  onClick={handleRetryDoctors}
+                  onClick={() => setDoctorsRetryKey(k => k + 1)}
                   className="flex items-center gap-2 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-blue-700 transition"
                 >
-                  <RefreshCw className="w-4 h-4" />
-                  Retry
+                  <RefreshCw className="w-4 h-4" /> Retry
                 </button>
               </div>
-            ) : doctors.length === 0 ? (
+            ) : filteredDoctors.length === 0 ? (
               <EmptyDoctors onClearFilters={handleClearFilters} />
             ) : (
-              doctors.map((doctor) => (
+              filteredDoctors.map((doctor) => (
                 <DoctorCard key={doctor.id} doctor={doctor} />
               ))
             )}

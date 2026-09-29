@@ -162,34 +162,24 @@ export default function AuthForm({ mode }: AuthFormProps) {
       }
 
       const sessionUser = data.user;
-      const meta = (sessionUser?.user_metadata ?? {}) as Record<
-        string,
-        string | undefined
-      >;
-      const storedRole = meta.role;
-
-      if (storedRole && storedRole !== role) {
-        await supabase!.auth.signOut();
-        showErrorToast(
-          "You have selected an incorrect role for this email."
-        );
-        return;
-      }
-
+      const meta = (sessionUser?.user_metadata || {}) as Record<string, string | undefined>;
+      const storedRole = meta.role || role; // Agar metadata mein role nahi hai, to state wala role use karein
+        
       login({
         id: sessionUser?.id,
         name: meta.name || sessionUser?.email || normalizedEmail,
         email: sessionUser?.email || normalizedEmail,
-        role: storedRole || role,
+        role: storedRole,
         specialty: meta.specialty,
       });
-
+      
       showSuccessToastAndNavigate("Login successful!", () => {
-        router.push(
-          (storedRole || role) === "doctor"
-            ? "/doctor/dashboard"
-            : "/patient/dashboard"
-        );
+        // Hamesha strict routing karein based on resolved role
+        if (storedRole === "doctor") {
+          router.push("/doctor/dashboard");
+        } else {
+          router.push("/patient/dashboard");
+        }
       });
     } catch (error) {
       console.error("Error during auth:", error);
