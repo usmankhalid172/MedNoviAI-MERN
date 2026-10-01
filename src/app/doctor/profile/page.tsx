@@ -5,8 +5,10 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Edit3,
+  ExternalLink,
   Loader2,
   Save,
+  Star,
   UserCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -20,64 +22,118 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
-import api from "@/lib/api";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import {
+  readProfileFromAuthMetadata,
+  saveDoctorProfile,
+  saveProfileToAuthMetadata,
+} from "@/lib/doctorProfile";
 
 interface DoctorProfile {
-  id?: string;
-  name?: string;
-  email?: string;
-  specialty?: string;
-  licenseNumber?: string;
-  yearsOfExperience?: number;
-  biography?: string;
-  consultationFee?: number;
-  clinicName?: string;
-  clinicAddress?: string;
+  id: string;
+  fullName: string;
+  specialty: string;
+  bio: string;
+  experienceYears: number | null;
+  consultationFee: number | null;
+  education: string[];
+  certifications: string[];
+  rating: number | null;
+  location: string;
+  availability: string;
+  avatarUrl: string | null;
+  joinedAt: string;
 }
 
 interface DoctorForm {
-  licenseNumber: string;
-  yearsOfExperience: string;
-  biography: string;
+  fullName: string;
+  specialty: string;
+  bio: string;
+  experienceYears: string;
   consultationFee: string;
-  clinicName: string;
-  clinicAddress: string;
+  education: string;
+  certifications: string;
+  location: string;
+  availability: string;
 }
 
 const emptyForm: DoctorForm = {
-  licenseNumber: "",
-  yearsOfExperience: "",
-  biography: "",
+  fullName: "",
+  specialty: "",
+  bio: "",
+  experienceYears: "",
   consultationFee: "",
-  clinicName: "",
-  clinicAddress: "",
+  education: "",
+  certifications: "",
+  location: "",
+  availability: "",
 };
 
-function extractDoctor(data: any): DoctorProfile {
-  return (
-    data?.doctor ||
-    data?.data?.doctor ||
-    data?.data ||
-    data
-  );
+type Row = Record<string, unknown>;
+
+function pickText(row: Row, keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "number") {
+      return String(value);
+    }
+  }
+  return "";
 }
 
-function getErrorMessage(error: any, fallback: string) {
-  const errors = error?.response?.data?.errors;
-  const firstError = errors?.[0];
+function pickRating(row: Row, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = row[key];
+    const num = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(num)) return num;
+  }
+  return null;
+}
 
-  return (
-    error?.response?.data?.message ||
-    (typeof firstError === "string"
-      ? firstError
-      : firstError?.message) ||
-    fallback
-  );
+function toList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item).trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return value
+      .split(/[\n,]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function toForm(doctor: DoctorProfile): DoctorForm {
+  return {
+    fullName: doctor.fullName,
+    specialty: doctor.specialty,
+    bio: doctor.bio,
+    experienceYears:
+      doctor.experienceYears != null
+        ? String(doctor.experienceYears)
+        : "",
+    consultationFee:
+      doctor.consultationFee != null
+        ? String(doctor.consultationFee)
+        : "",
+    education: doctor.education.join("\n"),
+    certifications: doctor.certifications.join("\n"),
+    location: doctor.location,
+    availability: doctor.availability,
+  };
 }
 
 export default function DoctorProfilePage() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
 
   const [profile, setProfile] =
     useState<DoctorProfile | null>(null);
@@ -91,70 +147,122 @@ export default function DoctorProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user?.id) {
-      setLoading(false);
+    const userId = user?.id;
+    const client = supabase;
+
+    if (!userId || !isSupabaseConfigured || !client) {
+      const configError =
+        !isSupabaseConfigured || !client
+          ? "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to your environment."
+          : null;
+
+      Promise.resolve().then(() => {
+        if (configError) {
+          setError(configError);
+        }
+
+        setLoading(false);
+      });
+
       return;
     }
+
+    let cancelled = false;
 
     const loadProfile = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // Backend route:
-        // GET /api/doctors/user/{userId}
-        const response = await api.get(
-          `/doctors/user/${user.id}`
+        const { data, error: sbError } = await client
+          .from("doctors")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (sbError) {
+          throw new Error(sbError.message);
+        }
+
+        const row = (data ?? {}) as Row;
+
+        // Anything the table does not have falls back to auth metadata, so
+        // values saved while the doctors columns were missing still show up.
+        const meta = readProfileFromAuthMetadata(
+          session?.user?.user_metadata
         );
 
-        const doctor = extractDoctor(response.data);
+        const doctor: DoctorProfile = {
+          id: userId,
+          fullName:
+            pickText(row, ["full_name", "name"]) ||
+            user.name ||
+            "",
+          specialty: pickText(row, ["specialty"]),
+          bio: pickText(row, ["bio", "biography", "about"]) || meta.bio,
+          experienceYears:
+            pickRating(row, [
+              "experience_years",
+              "years_of_experience",
+            ]) ?? meta.experience_years,
+          consultationFee: pickRating(row, [
+            "consultation_fee",
+            "fee",
+          ]),
+          education: toList(
+            row.education ?? row.qualifications ?? row.degrees
+          ),
+          certifications: toList(
+            row.certifications ?? row.licenses
+          ),
+          rating: pickRating(row, ["rating", "average_rating"]),
+          location: pickText(row, [
+            "location",
+            "clinic_name",
+            "clinic_address",
+          ]),
+          availability: pickText(row, ["availability"]),
+          avatarUrl:
+            pickText(row, [
+              "avatar_url",
+              "avatar",
+              "image_url",
+            ]) || meta.avatar_url,
+          joinedAt: pickText(row, ["created_at"]),
+        };
+
+        if (cancelled) return;
 
         setProfile(doctor);
-
-        setForm({
-          licenseNumber:
-            doctor.licenseNumber || "",
-
-          yearsOfExperience:
-            doctor.yearsOfExperience !== undefined &&
-            doctor.yearsOfExperience !== null
-              ? String(doctor.yearsOfExperience)
-              : "",
-
-          biography:
-            doctor.biography || "",
-
-          consultationFee:
-            doctor.consultationFee !== undefined &&
-            doctor.consultationFee !== null
-              ? String(doctor.consultationFee)
-              : "",
-
-          clinicName:
-            doctor.clinicName || "",
-
-          clinicAddress:
-            doctor.clinicAddress || "",
-        });
+        setForm(toForm(doctor));
       } catch (err) {
+        if (cancelled) return;
+
         console.error(
           "Failed to load doctor profile:",
           err
         );
 
         setError(
-          getErrorMessage(
-            err,
-            "Unable to load your profile."
-          )
+          err instanceof Error
+            ? err.message
+            : "Unable to load your profile."
         );
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
     loadProfile();
-  }, [user?.id]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.name, session?.user?.user_metadata]);
 
   const updateField = (
     field: keyof DoctorForm,
@@ -167,113 +275,121 @@ export default function DoctorProfilePage() {
   };
 
   const handleSave = async () => {
-    if (!form.licenseNumber.trim()) {
-      toast.error("License number is required.");
+    if (!user?.id) {
+      toast.error("Please sign in as a doctor.");
       return;
     }
 
-    const years = Number(form.yearsOfExperience);
-    const fee = Number(form.consultationFee);
+    const fullName = form.fullName.trim();
+    const specialty = form.specialty.trim();
+
+    if (!fullName) {
+      toast.error("Full name is required.");
+      return;
+    }
+
+    if (!specialty) {
+      toast.error("Specialty is required.");
+      return;
+    }
+
+    const experienceYears = form.experienceYears.trim();
+    const consultationFee = form.consultationFee.trim();
 
     if (
-      !Number.isInteger(years) ||
-      years < 0 ||
-      years > 70
+      experienceYears !== "" &&
+      (!Number.isInteger(Number(experienceYears)) ||
+        Number(experienceYears) < 0 ||
+        Number(experienceYears) > 70)
     ) {
       toast.error(
-        "Years of experience must be between 0 and 70."
+        "Experience must be a whole number between 0 and 70."
       );
       return;
     }
 
     if (
-      !Number.isFinite(fee) ||
-      fee < 0 ||
-      fee > 1000000
+      consultationFee !== "" &&
+      (!Number.isFinite(Number(consultationFee)) ||
+        Number(consultationFee) < 0)
     ) {
       toast.error(
-        "Consultation fee must be between 0 and 1,000,000."
+        "Consultation fee must be zero or more."
       );
+      return;
+    }
+
+    const bio = form.bio.trim();
+
+    if (bio.length > 2000) {
+      toast.error("Bio must be under 2000 characters.");
+      return;
+    }
+
+    if (!supabase) {
+      toast.error("Supabase is not configured.");
       return;
     }
 
     try {
       setSaving(true);
 
-      // Backend route:
-      // PATCH /api/doctors/profile
-      const response = await api.patch(
-        "/doctors/profile",
-        {
-          licenseNumber:
-            form.licenseNumber.trim(),
+      const result = await saveDoctorProfile(user.id, {
+        full_name: fullName,
+        specialty,
+        bio: bio || null,
+        experience_years:
+          experienceYears === ""
+            ? null
+            : Number(experienceYears),
+        consultation_fee:
+          consultationFee === ""
+            ? null
+            : Number(consultationFee),
+        education: toList(form.education),
+        certifications: toList(form.certifications),
+        location: form.location.trim() || null,
+        availability: form.availability.trim() || null,
+      });
 
-          yearsOfExperience: years,
-
-          biography:
-            form.biography.trim() || null,
-
-          consultationFee: fee,
-
-          clinicName:
-            form.clinicName.trim() || null,
-
-          clinicAddress:
-            form.clinicAddress.trim() || null,
-        }
-      );
-
-      const updatedDoctor = extractDoctor(
-        response.data
-      );
-
-      if (updatedDoctor) {
-        setProfile(updatedDoctor);
-
-        setForm({
-          licenseNumber:
-            updatedDoctor.licenseNumber ??
-            form.licenseNumber,
-
-          yearsOfExperience:
-            updatedDoctor.yearsOfExperience !==
-              undefined &&
-            updatedDoctor.yearsOfExperience !==
-              null
-              ? String(
-                  updatedDoctor.yearsOfExperience
-                )
-              : form.yearsOfExperience,
-
-          biography:
-            updatedDoctor.biography ??
-            form.biography,
-
-          consultationFee:
-            updatedDoctor.consultationFee !==
-              undefined &&
-            updatedDoctor.consultationFee !==
-              null
-              ? String(
-                  updatedDoctor.consultationFee
-                )
-              : form.consultationFee,
-
-          clinicName:
-            updatedDoctor.clinicName ??
-            form.clinicName,
-
-          clinicAddress:
-            updatedDoctor.clinicAddress ??
-            form.clinicAddress,
+      // Fall back to auth metadata when the table cannot hold these columns
+      // yet, or RLS blocked the write.
+      if (result.status === "unavailable") {
+        await saveProfileToAuthMetadata({
+          bio: bio.trim(),
+          experience_years:
+            experienceYears === "" ? null : Number(experienceYears),
+          avatar_url: profile?.avatarUrl ?? null,
         });
       }
 
+      const saved: DoctorProfile = {
+        id: user.id,
+        fullName,
+        specialty,
+        bio,
+        experienceYears:
+          experienceYears === ""
+            ? null
+            : Number(experienceYears),
+        consultationFee:
+          consultationFee === ""
+            ? null
+            : Number(consultationFee),
+        education: toList(form.education),
+        certifications: toList(form.certifications),
+        rating: profile?.rating ?? null,
+        location: form.location.trim(),
+        availability: form.availability.trim(),
+        avatarUrl: profile?.avatarUrl ?? null,
+        joinedAt: profile?.joinedAt ?? "",
+      };
+
+      setProfile(saved);
+      setForm(toForm(saved));
       setEditing(false);
 
-      toast.success(
-        "Doctor profile updated successfully."
-      );
+      toast.success("Doctor profile updated successfully.");
     } catch (err) {
       console.error(
         "Failed to update doctor profile:",
@@ -281,10 +397,9 @@ export default function DoctorProfilePage() {
       );
 
       toast.error(
-        getErrorMessage(
-          err,
-          "Failed to update doctor profile."
-        )
+        err instanceof Error
+          ? err.message
+          : "Failed to update doctor profile."
       );
     } finally {
       setSaving(false);
@@ -292,36 +407,9 @@ export default function DoctorProfilePage() {
   };
 
   const handleCancel = () => {
-    if (!profile) {
-      setEditing(false);
-      return;
+    if (profile) {
+      setForm(toForm(profile));
     }
-
-    setForm({
-      licenseNumber:
-        profile.licenseNumber || "",
-
-      yearsOfExperience:
-        profile.yearsOfExperience !== undefined &&
-        profile.yearsOfExperience !== null
-          ? String(profile.yearsOfExperience)
-          : "",
-
-      biography:
-        profile.biography || "",
-
-      consultationFee:
-        profile.consultationFee !== undefined &&
-        profile.consultationFee !== null
-          ? String(profile.consultationFee)
-          : "",
-
-      clinicName:
-        profile.clinicName || "",
-
-      clinicAddress:
-        profile.clinicAddress || "",
-    });
 
     setEditing(false);
   };
@@ -408,22 +496,30 @@ export default function DoctorProfilePage() {
             </p>
           </div>
 
-          {!editing && (
-            <Button
-              onClick={() => setEditing(true)}
-            >
-              <Edit3 className="mr-2 size-4" />
-              Edit Profile
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {user.id ? (
+              <Link
+                href={`/doctors/${user.id}`}
+                className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+              >
+                <ExternalLink className="mr-2 size-4" />
+                View Public Profile
+              </Link>
+            ) : null}
+
+            {!editing && (
+              <Button onClick={() => setEditing(true)}>
+                <Edit3 className="mr-2 size-4" />
+                Edit Profile
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Basic Information */}
         <Card>
           <CardHeader>
-            <CardTitle>
-              Basic Information
-            </CardTitle>
+            <CardTitle>Basic Information</CardTitle>
           </CardHeader>
 
           <CardContent className="grid gap-5 md:grid-cols-2">
@@ -437,12 +533,12 @@ export default function DoctorProfilePage() {
 
               <Input
                 id="name"
-                value={
-                  profile?.name ||
-                  user.name ||
-                  ""
+                value={form.fullName}
+                disabled={!editing}
+                maxLength={200}
+                onChange={(e) =>
+                  updateField("fullName", e.target.value)
                 }
-                disabled
               />
             </div>
 
@@ -456,14 +552,16 @@ export default function DoctorProfilePage() {
 
               <Input
                 id="specialty"
-                value={
-                  profile?.specialty || ""
+                value={form.specialty}
+                disabled={!editing}
+                maxLength={120}
+                onChange={(e) =>
+                  updateField("specialty", e.target.value)
                 }
-                disabled
               />
             </div>
 
-            <div className="space-y-2 md:col-span-2">
+            <div className="space-y-2">
               <label
                 htmlFor="email"
                 className="text-sm font-medium"
@@ -474,16 +572,35 @@ export default function DoctorProfilePage() {
               <Input
                 id="email"
                 type="email"
-                value={
-                  profile?.email ||
-                  user.email ||
-                  ""
-                }
+                value={user.email || ""}
                 disabled
               />
 
               <p className="text-xs text-muted-foreground">
                 Email is linked to your account.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="rating"
+                className="text-sm font-medium"
+              >
+                Rating
+              </label>
+
+              <div className="flex h-9 items-center gap-2">
+                <Star className="size-4 fill-amber-400 text-amber-400" />
+
+                <span className="text-sm font-semibold text-slate-800">
+                  {profile?.rating != null
+                    ? `${profile.rating} out of 5`
+                    : "No rating yet"}
+                </span>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Calculated from patient reviews.
               </p>
             </div>
           </CardContent>
@@ -492,53 +609,74 @@ export default function DoctorProfilePage() {
         {/* Professional Information */}
         <Card>
           <CardHeader>
-            <CardTitle>
-              Professional Information
-            </CardTitle>
+            <CardTitle>Practice Information</CardTitle>
           </CardHeader>
 
           <CardContent className="space-y-5">
             <div className="grid gap-5 md:grid-cols-2">
               <div className="space-y-2">
                 <label
-                  htmlFor="licenseNumber"
+                  htmlFor="location"
                   className="text-sm font-medium"
                 >
-                  License Number
+                  Clinic Location
                 </label>
 
                 <Input
-                  id="licenseNumber"
-                  value={form.licenseNumber}
+                  id="location"
+                  value={form.location}
                   disabled={!editing}
-                  maxLength={100}
+                  maxLength={200}
+                  placeholder="e.g. MedNovi Medical Center"
                   onChange={(e) =>
-                    updateField(
-                      "licenseNumber",
-                      e.target.value
-                    )
+                    updateField("location", e.target.value)
                   }
                 />
               </div>
 
               <div className="space-y-2">
                 <label
-                  htmlFor="yearsOfExperience"
+                  htmlFor="availability"
+                  className="text-sm font-medium"
+                >
+                  Availability
+                </label>
+
+                <Input
+                  id="availability"
+                  value={form.availability}
+                  disabled={!editing}
+                  maxLength={120}
+                  placeholder="e.g. Sun-Sat"
+                  onChange={(e) =>
+                    updateField("availability", e.target.value)
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2">
+              <div className="space-y-2">
+                <label
+                  htmlFor="experienceYears"
                   className="text-sm font-medium"
                 >
                   Years of Experience
                 </label>
 
                 <Input
-                  id="yearsOfExperience"
+                  id="experienceYears"
                   type="number"
+                  inputMode="numeric"
                   min={0}
                   max={70}
-                  value={form.yearsOfExperience}
+                  step={1}
+                  value={form.experienceYears}
                   disabled={!editing}
+                  placeholder="e.g. 12"
                   onChange={(e) =>
                     updateField(
-                      "yearsOfExperience",
+                      "experienceYears",
                       e.target.value
                     )
                   }
@@ -556,10 +694,12 @@ export default function DoctorProfilePage() {
                 <Input
                   id="consultationFee"
                   type="number"
+                  inputMode="decimal"
                   min={0}
-                  max={1000000}
+                  step="0.01"
                   value={form.consultationFee}
                   disabled={!editing}
+                  placeholder="e.g. 1500"
                   onChange={(e) =>
                     updateField(
                       "consultationFee",
@@ -569,75 +709,103 @@ export default function DoctorProfilePage() {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2">
                 <label
-                  htmlFor="clinicName"
+                  htmlFor="bio"
                   className="text-sm font-medium"
                 >
-                  Clinic Name
+                  Professional Bio
                 </label>
 
-                <Input
-                  id="clinicName"
-                  value={form.clinicName}
+                <Textarea
+                  id="bio"
+                  rows={4}
+                  value={form.bio}
                   disabled={!editing}
-                  maxLength={200}
+                  maxLength={2000}
+                  placeholder="Tell patients about your training, approach, and experience."
                   onChange={(e) =>
-                    updateField(
-                      "clinicName",
-                      e.target.value
-                    )
+                    updateField("bio", e.target.value)
                   }
                 />
+
+                <p className="text-xs text-muted-foreground">
+                  {form.bio.length}/2000 characters
+                </p>
               </div>
 
               <div className="space-y-2 md:col-span-2">
                 <label
-                  htmlFor="clinicAddress"
+                  htmlFor="education"
                   className="text-sm font-medium"
                 >
-                  Clinic Address
+                  Education
                 </label>
 
-                <Input
-                  id="clinicAddress"
-                  value={form.clinicAddress}
+                <Textarea
+                  id="education"
+                  rows={3}
+                  value={form.education}
                   disabled={!editing}
-                  maxLength={500}
+                  placeholder={
+                    "One entry per line, most recent first"
+                  }
                   onChange={(e) =>
-                    updateField(
-                      "clinicAddress",
-                      e.target.value
-                    )
+                    updateField("education", e.target.value)
                   }
                 />
+
+                <p className="text-xs text-muted-foreground">
+                  One entry per line, e.g.{" "}
+                  <code>MBBS, University of Lahore</code>
+                </p>
               </div>
 
               <div className="space-y-2 md:col-span-2">
                 <label
-                  htmlFor="biography"
+                  htmlFor="certifications"
                   className="text-sm font-medium"
                 >
-                  Biography
+                  Certifications
                 </label>
 
-                <textarea
-                  id="biography"
-                  rows={6}
-                  maxLength={3000}
-                  value={form.biography}
+                <Textarea
+                  id="certifications"
+                  rows={3}
+                  value={form.certifications}
                   disabled={!editing}
+                  placeholder={
+                    "One certification per line"
+                  }
                   onChange={(e) =>
                     updateField(
-                      "biography",
+                      "certifications",
                       e.target.value
                     )
                   }
-                  placeholder="Tell patients about your professional background..."
-                  className="flex min-h-[140px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 />
+
+                <p className="text-xs text-muted-foreground">
+                  One entry per line, e.g.{" "}
+                  <code>PMDC Registered Cardiologist</code>
+                </p>
               </div>
             </div>
+
+            {profile?.joinedAt ? (
+              <p className="text-xs text-muted-foreground">
+                Profile created on{" "}
+                {new Date(profile.joinedAt).toLocaleDateString(
+                  "en-US",
+                  {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  }
+                )}
+                .
+              </p>
+            ) : null}
 
             {/* Actions */}
             {editing && (

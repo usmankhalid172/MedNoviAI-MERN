@@ -3,6 +3,7 @@
 import React, {
   Suspense,
   useContext,
+  useEffect,
   useState,
 } from "react";
 import Link from "next/link";
@@ -10,6 +11,10 @@ import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/shared/Navbar";
 import Footer from "@/components/shared/Footer";
 import { AuthContext } from "@/context/AuthContext";
+import {
+  getAppointment,
+  type AppointmentRecord,
+} from "@/lib/appointmentsClient";
 import {
   CheckCircle2,
   Copy,
@@ -29,21 +34,45 @@ function ConfirmationContent() {
 
   const [copied, setCopied] = useState(false);
 
+  // Only the id is taken from the URL. The doctor, date, time and status used to
+  // be read from query parameters too, so the page rendered whatever the link
+  // claimed - including ?status=confirmed on a booking that was never made. The
+  // record is now fetched and the URL is treated as an identifier only.
   const appointmentId =
     searchParams.get("appointmentId") ||
     searchParams.get("bookingId");
 
-  const doctorName = searchParams.get("doctor");
-  const specialty = searchParams.get("specialty");
-  const date = searchParams.get("date");
-  const time = searchParams.get("time");
+  const [appointment, setAppointment] = useState<AppointmentRecord | null>(null);
+  const [bookingResolved, setBookingResolved] = useState(false);
 
-  const location =
-    searchParams.get("location") ||
-    "MedNovi Medical Center, Suite 402";
+  const location = "MedNovi Medical Center, Suite 402";
 
-  const status =
-    searchParams.get("status") || "pending";
+  useEffect(() => {
+    if (!appointmentId) return;
+
+    let cancelled = false;
+
+    async function load() {
+      const result = await getAppointment(appointmentId!);
+
+      if (cancelled) return;
+
+      setAppointment(result.ok ? result.data.appointment : null);
+      setBookingResolved(true);
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentId]);
+
+  const doctorName = appointment?.doctor?.full_name ?? "Your doctor";
+  const specialty = appointment?.doctor?.specialty ?? "General Medicine";
+  const date = appointment?.appointment_date ?? "";
+  const time = appointment?.appointment_time?.slice(0, 5) ?? "";
+  const status = appointment?.status ?? "pending";
 
   const fee = Number(searchParams.get("fee") || 0);
 
@@ -67,7 +96,29 @@ function ConfirmationContent() {
   // MISSING BOOKING DATA — clean fallback
   // ---------------------------------------------------------
 
-  if (!appointmentId || !doctorName || !specialty || !date || !time) {
+  if (!bookingResolved && appointmentId) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <Navbar />
+
+        <main className="container mx-auto px-4 py-16">
+          <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+            <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+            <h1 className="text-xl font-bold text-slate-900">
+              Loading your booking
+            </h1>
+            <p className="mt-2 text-slate-500">
+              Please wait a moment.
+            </p>
+          </div>
+        </main>
+
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!appointment) {
     return (
       <div className="min-h-screen bg-slate-50">
         <Navbar />
@@ -311,7 +362,11 @@ function ConfirmationContent() {
                 </button>
 
                 <Link
-                  href="/appointment/book"
+                  href={
+                    appointment.doctor_id
+                      ? `/appointment/book?doctorId=${encodeURIComponent(appointment.doctor_id)}`
+                      : "/appointment/book"
+                  }
                   className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
                 >
                   Book Another Appointment

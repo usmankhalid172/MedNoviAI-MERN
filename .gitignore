@@ -58,12 +58,15 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # ─────────────────────────────────────────────────────
-# Supabase CLI (ignored — remove this line if team uses migrations)
+# Supabase CLI (migrations ARE tracked; local state is not)
 # ─────────────────────────────────────────────────────
-supabase/
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+supabase/config.toml
 
 # ─────────────────────────────────────────────────────
 # Misc
 # ─────────────────────────────────────────────────────
 .vercel
-.turbo
+.turbo.env.local

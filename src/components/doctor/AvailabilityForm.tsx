@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  Loader2,
-  Save,
-  X,
-} from "lucide-react";
+import { Loader2, Save, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,20 +15,16 @@ export interface AvailabilityFormValues {
   dayOfWeek: string;
   startTime: string;
   endTime: string;
-  slotDurationMinutes: string;
-  isActive: boolean;
-  effectiveFrom: string;
-  effectiveTo: string;
 }
 
 interface AvailabilityFormProps {
   form: AvailabilityFormValues;
-  editingId: string | null;
+  editing: boolean;
   saving: boolean;
   days: { value: string; label: string }[];
   onChange: (
     field: keyof AvailabilityFormValues,
-    value: string | boolean
+    value: string
   ) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -40,7 +32,7 @@ interface AvailabilityFormProps {
 
 export default function AvailabilityForm({
   form,
-  editingId,
+  editing,
   saving,
   days,
   onChange,
@@ -52,7 +44,7 @@ export default function AvailabilityForm({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>
-            {editingId
+            {editing
               ? "Edit Availability"
               : "Add Availability"}
           </CardTitle>
@@ -71,7 +63,6 @@ export default function AvailabilityForm({
 
       <CardContent className="space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
-          {/* Day */}
           <div className="space-y-2">
             <label
               htmlFor="dayOfWeek"
@@ -100,37 +91,6 @@ export default function AvailabilityForm({
             </select>
           </div>
 
-          {/* Slot Duration */}
-          <div className="space-y-2">
-            <label
-              htmlFor="slotDurationMinutes"
-              className="text-sm font-medium"
-            >
-              Slot Duration (minutes)
-            </label>
-
-            <Input
-              id="slotDurationMinutes"
-              type="number"
-              min={5}
-              max={240}
-              step={5}
-              value={form.slotDurationMinutes}
-              disabled={saving}
-              onChange={(event) =>
-                onChange(
-                  "slotDurationMinutes",
-                  event.target.value
-                )
-              }
-            />
-
-            <p className="text-xs text-muted-foreground">
-              Choose between 5 and 240 minutes.
-            </p>
-          </div>
-
-          {/* Start Time */}
           <div className="space-y-2">
             <label
               htmlFor="startTime"
@@ -150,7 +110,6 @@ export default function AvailabilityForm({
             />
           </div>
 
-          {/* End Time */}
           <div className="space-y-2">
             <label
               htmlFor="endTime"
@@ -169,81 +128,8 @@ export default function AvailabilityForm({
               }
             />
           </div>
-
-          {/* Effective From */}
-          <div className="space-y-2">
-            <label
-              htmlFor="effectiveFrom"
-              className="text-sm font-medium"
-            >
-              Effective From
-            </label>
-
-            <Input
-              id="effectiveFrom"
-              type="date"
-              value={form.effectiveFrom}
-              disabled={saving}
-              onChange={(event) =>
-                onChange(
-                  "effectiveFrom",
-                  event.target.value
-                )
-              }
-            />
-          </div>
-
-          {/* Effective To */}
-          <div className="space-y-2">
-            <label
-              htmlFor="effectiveTo"
-              className="text-sm font-medium"
-            >
-              Effective To
-            </label>
-
-            <Input
-              id="effectiveTo"
-              type="date"
-              value={form.effectiveTo}
-              disabled={saving}
-              onChange={(event) =>
-                onChange(
-                  "effectiveTo",
-                  event.target.value
-                )
-              }
-            />
-          </div>
         </div>
 
-        {/* Active */}
-        <label className="flex items-center gap-3 rounded-lg border p-4">
-          <input
-            type="checkbox"
-            checked={form.isActive}
-            disabled={saving}
-            onChange={(event) =>
-              onChange(
-                "isActive",
-                event.target.checked
-              )
-            }
-            className="size-4"
-          />
-
-          <div>
-            <p className="text-sm font-medium">
-              Availability is active
-            </p>
-
-            <p className="text-xs text-muted-foreground">
-              Active availability can be used for appointment booking.
-            </p>
-          </div>
-        </label>
-
-        {/* Actions */}
         <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:justify-end">
           <Button
             variant="outline"
@@ -253,10 +139,7 @@ export default function AvailabilityForm({
             Cancel
           </Button>
 
-          <Button
-            onClick={onSave}
-            disabled={saving}
-          >
+          <Button onClick={onSave} disabled={saving}>
             {saving ? (
               <>
                 <Loader2 className="mr-2 size-4 animate-spin" />
@@ -265,7 +148,7 @@ export default function AvailabilityForm({
             ) : (
               <>
                 <Save className="mr-2 size-4" />
-                {editingId
+                {editing
                   ? "Update Availability"
                   : "Create Availability"}
               </>

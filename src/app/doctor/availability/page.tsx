@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft,
   CalendarDays,
   Clock3,
   Edit3,
@@ -20,57 +19,88 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
-import api from "@/lib/api";
-import AvailabilityForm from "@/components/doctor/AvailabilityForm";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import AvailabilityForm, {
+  type AvailabilityFormValues,
+} from "@/components/doctor/AvailabilityForm";
 
 interface AvailabilityRecord {
-  id: string;
   doctorId: string;
-  doctorName: string;
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
-  slotDurationMinutes: number;
-  isActive: boolean;
-  effectiveFrom?: string | null;
-  effectiveTo?: string | null;
-}
-
-interface AvailabilityFormValues {
   dayOfWeek: string;
   startTime: string;
   endTime: string;
-  slotDurationMinutes: string;
-  isActive: boolean;
-  effectiveFrom: string;
-  effectiveTo: string;
 }
 
+type AvailabilityRow = {
+  doctor_id: string | null;
+  day_of_week: string | null;
+  start_time: string | null;
+  end_time: string | null;
+};
+
 const DAYS = [
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-  { value: "0", label: "Sunday" },
+  { value: "Monday", label: "Monday", order: 1 },
+  { value: "Tuesday", label: "Tuesday", order: 2 },
+  { value: "Wednesday", label: "Wednesday", order: 3 },
+  { value: "Thursday", label: "Thursday", order: 4 },
+  { value: "Friday", label: "Friday", order: 5 },
+  { value: "Saturday", label: "Saturday", order: 6 },
+  { value: "Sunday", label: "Sunday", order: 7 },
+];
+
+const NUMERIC_DAYS = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
 ];
 
 const emptyForm: AvailabilityFormValues = {
-  dayOfWeek: "1",
+  dayOfWeek: "Monday",
   startTime: "09:00",
   endTime: "13:00",
-  slotDurationMinutes: "30",
-  isActive: true,
-  effectiveFrom: "",
-  effectiveTo: "",
 };
 
-function getDayName(day: number) {
+function toDayName(value: string | null | undefined): string {
+  const trimmed = (value ?? "").trim();
+
+  if (!trimmed) return "";
+
+  if (/^\d+$/.test(trimmed)) {
+    return NUMERIC_DAYS[Number(trimmed)] ?? trimmed;
+  }
+
+  const short = trimmed.slice(0, 3).toLowerCase();
+
   return (
-    DAYS.find((item) => Number(item.value) === day)?.label ||
-    "Unknown"
+    DAYS.find((day) => day.value.slice(0, 3).toLowerCase() === short)
+      ?.value ?? trimmed
   );
+}
+
+function dayOrder(day: string): number {
+  return (
+    DAYS.find(
+      (item) =>
+        item.value.slice(0, 3).toLowerCase() ===
+        day.slice(0, 3).toLowerCase()
+    )?.order ?? 99
+  );
+}
+
+function getDayName(day: string) {
+  return toDayName(day) || "Unknown";
+}
+
+function minutesFromTime(time: string) {
+  const match = /(\d{1,2}):(\d{2})/.exec(time);
+
+  if (!match) return 0;
+
+  return Number(match[1]) * 60 + Number(match[2]);
 }
 
 function formatTime(time: string) {
@@ -113,40 +143,11 @@ function toInputTime(time: string) {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
-  const err = error as {
-    response?: {
-      data?: {
-        message?: string;
-        errors?: Array<{ message?: string } | string>;
-      };
-    };
-  };
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
 
-  const errors = err?.response?.data?.errors;
-  const firstError = errors?.[0];
-
-  return (
-    err?.response?.data?.message ||
-    (typeof firstError === "string"
-      ? firstError
-      : firstError?.message) ||
-    fallback
-  );
-}
-
-function extractAvailability(data: unknown): AvailabilityRecord[] {
-  const response = data as {
-    data?: AvailabilityRecord[];
-    availability?: AvailabilityRecord[];
-  };
-
-  const result =
-    response?.data ??
-    response?.availability ??
-    data ??
-    [];
-
-  return Array.isArray(result) ? result : [];
+  return fallback;
 }
 
 export default function DoctorAvailabilityPage() {
@@ -157,79 +158,136 @@ export default function DoctorAvailabilityPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingDay, setEditingDay] = useState<string | null>(
+    null
+  );
 
   const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingDay, setDeletingDay] = useState<string | null>(
+    null
+  );
 
   const [form, setForm] =
     useState<AvailabilityFormValues>(emptyForm);
 
-  const loadAvailability = async () => {
-    if (!user?.id) {
-      return;
-    }
+  const [reloadKey, setReloadKey] = useState(0);
 
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await api.get(
-        `/availability/doctor/${user.id}`
-      );
-
-      const availability = extractAvailability(response.data);
-
-      setRecords(availability);
-    } catch (err) {
-      console.error(
-        "Failed to load doctor availability:",
-        err
-      );
-
-      setError(
-        getErrorMessage(
-          err,
-          "Unable to load your availability."
-        )
-      );
-    } finally {
-      setLoading(false);
-    }
+  const refresh = () => {
+    setReloadKey((key) => key + 1);
   };
 
   useEffect(() => {
-    loadAvailability();
-  }, [user?.id]);
+    const currentUserId = user?.id;
+    const client = supabase;
+
+    if (!currentUserId || !isSupabaseConfigured || !client) {
+      return;
+    }
+
+    const doctorId: string = currentUserId;
+    const db = client;
+
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const { data, error: sbError } = await db
+          .from("doctor_availability")
+          .select(
+            "doctor_id, day_of_week, start_time, end_time"
+          )
+          .eq("doctor_id", doctorId);
+
+        if (cancelled) return;
+
+        if (sbError) {
+          throw new Error(sbError.message);
+        }
+
+        const rows = (data ?? []) as unknown as AvailabilityRow[];
+
+        setRecords(
+          rows
+            .map((row) => ({
+              doctorId: row.doctor_id ?? doctorId,
+              dayOfWeek: toDayName(row.day_of_week),
+              startTime: row.start_time ?? "",
+              endTime: row.end_time ?? "",
+            }))
+            .filter((row) => row.dayOfWeek.length > 0)
+        );
+      } catch (err) {
+        if (cancelled) return;
+
+        console.error(
+          "Failed to load doctor availability:",
+          err
+        );
+
+        setError(
+          getErrorMessage(
+            err,
+            "Unable to load your availability."
+          )
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, reloadKey]);
 
   const sortedRecords = useMemo(() => {
     return [...records].sort((a, b) => {
-      const dayA = a.dayOfWeek === 0 ? 7 : a.dayOfWeek;
-      const dayB = b.dayOfWeek === 0 ? 7 : b.dayOfWeek;
+      const orderDiff =
+        dayOrder(a.dayOfWeek) - dayOrder(b.dayOfWeek);
 
-      if (dayA !== dayB) {
-        return dayA - dayB;
+      if (orderDiff !== 0) {
+        return orderDiff;
       }
 
       return a.startTime.localeCompare(b.startTime);
     });
   }, [records]);
 
-  const activeCount = records.filter(
-    (record) => record.isActive
-  ).length;
+  const daysCovered = useMemo(
+    () =>
+      new Set(records.map((r) => r.dayOfWeek.toLowerCase()))
+        .size,
+    [records]
+  );
 
-  const inactiveCount = records.length - activeCount;
+  const weeklyHours = useMemo(
+    () =>
+      records.reduce((total, record) => {
+        const span =
+          minutesFromTime(record.endTime) -
+          minutesFromTime(record.startTime);
+
+        return span > 0 ? total + span / 60 : total;
+      }, 0),
+    [records]
+  );
 
   const resetForm = () => {
     setForm(emptyForm);
-    setEditingId(null);
+    setEditingDay(null);
     setShowForm(false);
   };
 
   const handleFormChange = (
     field: keyof AvailabilityFormValues,
-    value: string | boolean
+    value: string
   ) => {
     setForm((current) => ({
       ...current,
@@ -237,101 +295,107 @@ export default function DoctorAvailabilityPage() {
     }));
   };
 
-  const validateForm = () => {
+  const validateForm = (): string | null => {
     if (!form.startTime || !form.endTime) {
-      toast.error("Start time and end time are required.");
-      return false;
+      return "Start time and end time are required.";
     }
 
     if (form.startTime >= form.endTime) {
-      toast.error("End time must be after start time.");
-      return false;
+      return "End time must be after start time.";
     }
 
-    const duration = Number(form.slotDurationMinutes);
-
-    if (
-      !Number.isInteger(duration) ||
-      duration < 5 ||
-      duration > 240
-    ) {
-      toast.error(
-        "Slot duration must be between 5 and 240 minutes."
-      );
-      return false;
-    }
-
-    if (
-      form.effectiveFrom &&
-      form.effectiveTo &&
-      form.effectiveFrom > form.effectiveTo
-    ) {
-      toast.error(
-        "Effective To must be after Effective From."
-      );
-      return false;
-    }
-
-    return true;
+    return null;
   };
 
   const handleSave = async () => {
-    if (!user?.id) {
+    const userId = user?.id;
+    const client = supabase;
+
+    if (!userId || !isSupabaseConfigured || !client) {
       return;
     }
 
-    if (!validateForm()) {
+    const validationError = validateForm();
+
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
-    const duration = Number(form.slotDurationMinutes);
-
-    const payload = {
-      dayOfWeek: Number(form.dayOfWeek),
-      startTime: toTimeOnlyValue(form.startTime),
-      endTime: toTimeOnlyValue(form.endTime),
-      slotDurationMinutes: duration,
-      isActive: form.isActive,
-      effectiveFrom: form.effectiveFrom || null,
-      effectiveTo: form.effectiveTo || null,
-    };
+    const day = toDayName(form.dayOfWeek);
+    const startTime = toTimeOnlyValue(form.startTime);
+    const endTime = toTimeOnlyValue(form.endTime);
 
     try {
       setSaving(true);
 
-      if (editingId) {
-        await api.put(
-          `/availability/${editingId}`,
-          payload
-        );
+      let conflictQuery = client
+        .from("doctor_availability")
+        .select("day_of_week")
+        .eq("doctor_id", userId)
+        .eq("day_of_week", day);
 
-        toast.success(
-          "Availability updated successfully."
-        );
-      } else {
-        await api.post("/availability", {
-          doctorId: user.id,
-          ...payload,
-        });
-
-        toast.success(
-          "Availability created successfully."
+      if (editingDay) {
+        conflictQuery = conflictQuery.neq(
+          "day_of_week",
+          editingDay
         );
       }
 
+      const { data: existing, error: conflictError } =
+        await conflictQuery;
+
+      if (conflictError) {
+        throw new Error(conflictError.message);
+      }
+
+      if ((existing ?? []).length > 0) {
+        toast.error(
+          `You already have an availability rule for ${getDayName(day)}.`
+        );
+        return;
+      }
+
+      if (editingDay) {
+        const { error: sbError } = await client
+          .from("doctor_availability")
+          .update({
+            day_of_week: day,
+            start_time: startTime,
+            end_time: endTime,
+          })
+          .eq("doctor_id", userId)
+          .eq("day_of_week", editingDay);
+
+        if (sbError) {
+          throw new Error(sbError.message);
+        }
+
+        toast.success("Availability updated successfully.");
+      } else {
+        const { error: sbError } = await client
+          .from("doctor_availability")
+          .insert({
+            doctor_id: userId,
+            day_of_week: day,
+            start_time: startTime,
+            end_time: endTime,
+          });
+
+        if (sbError) {
+          throw new Error(sbError.message);
+        }
+
+        toast.success("Availability created successfully.");
+      }
+
       resetForm();
-      await loadAvailability();
+      refresh();
     } catch (err) {
-      console.error(
-        "Failed to save availability:",
-        err
-      );
+      console.error("Failed to save availability:", err);
 
       toast.error(
-        getErrorMessage(
-          err,
-          "Failed to save availability."
-        )
+        getErrorMessage(err, "Failed to save availability.")
       );
     } finally {
       setSaving(false);
@@ -339,30 +403,27 @@ export default function DoctorAvailabilityPage() {
   };
 
   const handleEdit = (record: AvailabilityRecord) => {
-    setEditingId(record.id);
+    setEditingDay(record.dayOfWeek);
 
     setForm({
-      dayOfWeek: String(record.dayOfWeek),
+      dayOfWeek: record.dayOfWeek,
       startTime: toInputTime(record.startTime),
       endTime: toInputTime(record.endTime),
-      slotDurationMinutes: String(
-        record.slotDurationMinutes
-      ),
-      isActive: record.isActive,
-      effectiveFrom: record.effectiveFrom
-        ? record.effectiveFrom.slice(0, 10)
-        : "",
-      effectiveTo: record.effectiveTo
-        ? record.effectiveTo.slice(0, 10)
-        : "",
     });
 
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (record: AvailabilityRecord) => {
+    const userId = user?.id;
+    const client = supabase;
+
+    if (!userId || !isSupabaseConfigured || !client) {
+      return;
+    }
+
     const confirmed = window.confirm(
-      "Are you sure you want to delete this availability?"
+      `Delete your ${getDayName(record.dayOfWeek)} availability?`
     );
 
     if (!confirmed) {
@@ -370,19 +431,27 @@ export default function DoctorAvailabilityPage() {
     }
 
     try {
-      setDeletingId(id);
+      setDeletingDay(record.dayOfWeek);
 
-      await api.delete(`/availability/${id}`);
+      const { error: sbError } = await client
+        .from("doctor_availability")
+        .delete()
+        .eq("doctor_id", userId)
+        .eq("day_of_week", record.dayOfWeek);
+
+      if (sbError) {
+        throw new Error(sbError.message);
+      }
 
       setRecords((current) =>
-        current.filter((record) => record.id !== id)
+        current.filter(
+          (item) => item.dayOfWeek !== record.dayOfWeek
+        )
       );
 
-      toast.success(
-        "Availability deleted successfully."
-      );
+      toast.success("Availability deleted successfully.");
 
-      if (editingId === id) {
+      if (editingDay === record.dayOfWeek) {
         resetForm();
       }
     } catch (err) {
@@ -398,7 +467,7 @@ export default function DoctorAvailabilityPage() {
         )
       );
     } finally {
-      setDeletingId(null);
+      setDeletingDay(null);
     }
   };
 
@@ -424,6 +493,30 @@ export default function DoctorAvailabilityPage() {
     );
   }
 
+  if (!isSupabaseConfigured || !supabase) {
+    return (
+      <PageLayout>
+        <div className="mx-auto max-w-5xl px-4 py-10">
+          <Card>
+            <CardContent className="py-10 text-center">
+              <CalendarDays className="mb-4 mx-auto size-12 text-muted-foreground" />
+
+              <h2 className="text-xl font-semibold">
+                Supabase is not configured
+              </h2>
+
+              <p className="mt-2 text-sm text-muted-foreground">
+                Add NEXT_PUBLIC_SUPABASE_URL and
+                NEXT_PUBLIC_SUPABASE_ANON_KEY to your environment
+                to manage availability.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </PageLayout>
+    );
+  }
+
   if (loading) {
     return (
       <PageLayout>
@@ -437,15 +530,14 @@ export default function DoctorAvailabilityPage() {
   return (
     <PageLayout>
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 md:py-8">
-        {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <Link
               href="/doctor/dashboard"
-              className="mb-3 inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+              className="mb-3 inline-flex items-center text-sm text-white bg-blue-500 hover:bg-blue-700
+              rounded-2xl px-4 py-2"
             >
-              <ArrowLeft className="mr-2 size-4" />
-              Back to Dashboard
+              &larr; Back to Dashboard
             </Link>
 
             <h1 className="text-2xl font-bold md:text-3xl">
@@ -461,7 +553,7 @@ export default function DoctorAvailabilityPage() {
             <Button
               onClick={() => {
                 setForm(emptyForm);
-                setEditingId(null);
+                setEditingDay(null);
                 setShowForm(true);
               }}
             >
@@ -494,16 +586,16 @@ export default function DoctorAvailabilityPage() {
           <Card>
             <CardContent className="flex items-center gap-4 p-5">
               <div className="flex size-11 items-center justify-center rounded-lg bg-green-500/10">
-                <Clock3 className="size-5 text-green-600" />
+                <CalendarDays className="size-5 text-green-600" />
               </div>
 
               <div>
                 <p className="text-sm text-muted-foreground">
-                  Active
+                  Days Covered
                 </p>
 
                 <p className="text-2xl font-bold">
-                  {activeCount}
+                  {daysCovered}
                 </p>
               </div>
             </CardContent>
@@ -512,16 +604,16 @@ export default function DoctorAvailabilityPage() {
           <Card>
             <CardContent className="flex items-center gap-4 p-5">
               <div className="flex size-11 items-center justify-center rounded-lg bg-muted">
-                <CalendarDays className="size-5 text-muted-foreground" />
+                <Clock3 className="size-5 text-muted-foreground" />
               </div>
 
               <div>
                 <p className="text-sm text-muted-foreground">
-                  Inactive
+                  Weekly Hours
                 </p>
 
                 <p className="text-2xl font-bold">
-                  {inactiveCount}
+                  {Math.round(weeklyHours * 10) / 10}
                 </p>
               </div>
             </CardContent>
@@ -532,7 +624,7 @@ export default function DoctorAvailabilityPage() {
         {showForm && (
           <AvailabilityForm
             form={form}
-            editingId={editingId}
+            editing={editingDay !== null}
             saving={saving}
             days={DAYS}
             onChange={handleFormChange}
@@ -555,7 +647,7 @@ export default function DoctorAvailabilityPage() {
 
               <Button
                 className="mt-4"
-                onClick={loadAvailability}
+                onClick={refresh}
               >
                 Try Again
               </Button>
@@ -582,7 +674,7 @@ export default function DoctorAvailabilityPage() {
                   className="mt-5"
                   onClick={() => {
                     setForm(emptyForm);
-                    setEditingId(null);
+                    setEditingDay(null);
                     setShowForm(true);
                   }}
                 >
@@ -595,7 +687,7 @@ export default function DoctorAvailabilityPage() {
         ) : (
           <div className="space-y-4">
             {sortedRecords.map((record) => (
-              <Card key={record.id}>
+              <Card key={record.dayOfWeek}>
                 <CardContent className="p-5">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-start gap-4">
@@ -609,16 +701,8 @@ export default function DoctorAvailabilityPage() {
                             {getDayName(record.dayOfWeek)}
                           </h3>
 
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                              record.isActive
-                                ? "bg-green-100 text-green-700"
-                                : "bg-muted text-muted-foreground"
-                            }`}
-                          >
-                            {record.isActive
-                              ? "Active"
-                              : "Inactive"}
+                          <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
+                            Active
                           </span>
                         </div>
 
@@ -626,24 +710,6 @@ export default function DoctorAvailabilityPage() {
                           {formatTime(record.startTime)} -{" "}
                           {formatTime(record.endTime)}
                         </p>
-
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {record.slotDurationMinutes} minute appointments
-                        </p>
-
-                        {(record.effectiveFrom ||
-                          record.effectiveTo) && (
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            Effective:{" "}
-                            {record.effectiveFrom
-                              ? record.effectiveFrom.slice(0, 10)
-                              : "No start date"}{" "}
-                            →{" "}
-                            {record.effectiveTo
-                              ? record.effectiveTo.slice(0, 10)
-                              : "No end date"}
-                          </p>
-                        )}
                       </div>
                     </div>
 
@@ -659,13 +725,13 @@ export default function DoctorAvailabilityPage() {
                       <Button
                         variant="destructive"
                         onClick={() =>
-                          handleDelete(record.id)
+                          handleDelete(record)
                         }
                         disabled={
-                          deletingId === record.id
+                          deletingDay === record.dayOfWeek
                         }
                       >
-                        {deletingId === record.id ? (
+                        {deletingDay === record.dayOfWeek ? (
                           <Loader2 className="mr-2 size-4 animate-spin" />
                         ) : (
                           <Trash2 className="mr-2 size-4" />
