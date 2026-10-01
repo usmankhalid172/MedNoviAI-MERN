@@ -1,52 +1,118 @@
-export interface IntakeSummaryData {
-  patientAge: number;
-  patientGender: string;
-  symptoms: string;
-  duration: string;
-  severity: 'Low' | 'Moderate' | 'High' | 'Emergency';
-  recommendedSpecialty: string;
-  aiSummary: string;
+import api from "@/lib/api";
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+export interface AIChatResponse {
+  conversationId: string;
+  message: string;
+}
 
-export async function sendChatMessage(message: string, history: Array<{ role: string; content: string }>) {
+export interface SymptomCheckRequest {
+  symptoms: string;
+  age: number;
+  gender?: string;
+  medicalHistory?: string;
+  currentMedications?: string;
+  allergies?: string;
+}
+
+export interface SymptomCheckResponse {
+  summary: string;
+  possibleConditions: string;
+  recommendedAction: string;
+  urgency: string;
+  requiresEmergencyCare: boolean;
+}
+
+export interface IntakeSummaryData {
+  patientId?: string;
+  appointmentId?: string;
+  aiConversationId?: string;
+  recommendedSpecialtyId?: string;
+  chiefComplaint: string;
+  symptomsDescription?: string;
+  symptomOnset?: string;
+  painLevel?: number;
+  temperatureCelsius?: number;
+  bloodPressure?: string;
+  heartRateBpm?: number;
+  currentMedications?: string;
+  additionalNotes?: string;
+  aiSummary?: string;
+}
+
+export async function sendChatMessage(
+  message: string,
+  conversationId?: string
+): Promise<AIChatResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/ai/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history }),
+    const response = await api.post<AIChatResponse>("/ai/chat", {
+      message,
+      conversationId: conversationId || null,
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to send message to AI service');
-    }
-
-    return await response.json();
+    return response.data;
   } catch (error) {
-    console.error('Error in sendChatMessage:', error);
-    return {
-      reply: "I'm having trouble connecting to the AI server. Please verify your backend API connection.",
-      isError: true,
-    };
+    console.error("Error in sendChatMessage:", error);
+    throw error;
   }
 }
 
-export async function submitIntakeSummary(data: IntakeSummaryData) {
+export async function symptomCheck(
+  data: SymptomCheckRequest
+): Promise<SymptomCheckResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/ai/intake`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
+    const response = await api.post<SymptomCheckResponse>(
+      "/ai/symptom-check",
+      data
+    );
 
-    if (!response.ok) {
-      throw new Error('Failed to submit intake summary');
-    }
-
-    return await response.json();
+    return response.data;
   } catch (error) {
-    console.error('Error submitting intake summary:', error);
-    return { success: false, error: 'Database submission failed' };
+    console.error("Error in symptomCheck:", error);
+    throw error;
+  }
+}
+
+export async function createConversation(
+  patientId: string,
+  title: string,
+  appointmentId?: string
+) {
+  const response = await api.post("/ai/conversations", {
+    patientId,
+    appointmentId: appointmentId || null,
+    title,
+  });
+
+  return response.data;
+}
+
+export async function getConversation(conversationId: string) {
+  const response = await api.get(`/ai/conversations/${conversationId}`);
+  return response.data;
+}
+
+export async function getPatientConversations(patientId: string) {
+  const response = await api.get(
+    `/ai/conversations/patient/${patientId}`
+  );
+
+  return response.data;
+}
+
+export async function submitIntakeSummary(
+  data: IntakeSummaryData
+) {
+  try {
+    const response = await api.post("/patientintakes", data);
+
+    return response.data;
+  } catch (error) {
+    console.error("Error submitting intake summary:", error);
+    throw error;
   }
 }
