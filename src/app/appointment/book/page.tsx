@@ -1,5 +1,4 @@
 "use client";
-
 import { Suspense } from "react";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
@@ -8,12 +7,20 @@ import Navbar from "@/components/shared/Navbar";
 import EmptyState from "@/components/shared/EmptyState";
 import Footer from "@/components/shared/Footer";
 import { supabase } from "@/lib/supabase";
+import {
+  WEEK_DAYS,
+  availableWeekdays,
+  buildAvailableSlots,
+  fetchBookedTimes,
+  fetchDoctorAvailability,
+  fromLocalDateString,
+  resolveWindow,
+  weekdayForDate,
+  type AvailabilityWindow,
+} from "@/lib/doctorSlots";
 import { ChevronRight, Loader2, Check } from "lucide-react";
-import { toast, Toaster } from "sonner"; // Added Sonner for global API error toasts
-
-// ─────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────
+import { toast, Toaster } from "sonner";
+import { bookAppointment, isSlotConflict } from "@/lib/appointmentsClient";
 
 interface Doctor {
   id: string;
@@ -53,16 +60,8 @@ interface DoctorRow {
   availability: string | null;
 }
 
-interface BookedRow {
-  appointment_time: string;
-}
 
 const STEPS = ["Specialty", "Doctor", "Date & Time", "Confirm"];
-const WEEKDAY_ORDER = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-// ─────────────────────────────────────────────────────────
-// Date / time helpers
-// ─────────────────────────────────────────────────────────
 
 function getTodayLocalDate() {
   const now = new Date();
@@ -82,77 +81,50 @@ function convertDisplayTimeTo24Hour(time: string): string {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
 }
 
-function formatTime(time: string): string {
-  const [hStr, mStr] = time.split(":");
-  let hours = Number(hStr);
-  const modifier = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12;
-  if (hours === 0) hours = 12;
-  return `${hours}:${mStr} ${modifier}`;
+
+function normalizeSpecialtyName(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function parseAvailabilityToDays(availability: string): Set<string> {
-  const allowed = new Set<string>();
-  if (!availability) return allowed;
-
-  const normalize = (token: string): string | null => {
-    const t = token.trim().slice(0, 3).toLowerCase();
-    const match = WEEKDAY_ORDER.find((d) => d.toLowerCase() === t);
-    return match || null;
-  };
-
-  const rangeMatches = availability.matchAll(
-    /(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s*-\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*/gi
+/**
+ * Resolves the Specialty a doctor belongs to.
+ *
+ * `specialties.name` and `doctors.specialty` are free-text and drift apart in
+ * practice ("Cardiology" vs "Cardiologist"). An exact match is preferred, but
+ * a doctor whose specialty is missing from the table still gets a synthetic
+ * entry so the wizard can preselect them instead of dead-ending on step 1.
+ */
+function findSpecialtyForDoctor(
+  specialties: Specialty[],
+  doctorSpecialty: string
+): Specialty {
+  const target = normalizeSpecialtyName(doctorSpecialty);
+  const match = specialties.find(
+    (s) => normalizeSpecialtyName(s.name) === target
   );
-  const rangesConsumed = new Set<string>();
-  for (const match of rangeMatches) {
-    const start = normalize(match[1]);
-    const end = normalize(match[2]);
-    if (!start || !end) continue;
-    const startIdx = WEEKDAY_ORDER.indexOf(start);
-    const endIdx = WEEKDAY_ORDER.indexOf(end);
-    if (startIdx === -1 || endIdx === -1) continue;
+  if (match) return match;
 
-    if (startIdx <= endIdx) {
-      for (let i = startIdx; i <= endIdx; i++) allowed.add(WEEKDAY_ORDER[i]);
-    } else {
-      for (let i = startIdx; i < 7; i++) allowed.add(WEEKDAY_ORDER[i]);
-      for (let i = 0; i <= endIdx; i++) allowed.add(WEEKDAY_ORDER[i]);
-    }
-    rangesConsumed.add(match[0]);
-  }
+  const partial = specialties.find(
+    (s) =>
+      target.includes(normalizeSpecialtyName(s.name)) ||
+      normalizeSpecialtyName(s.name).includes(target)
+  );
+  if (partial) return partial;
 
-  let remainder = availability;
-  rangesConsumed.forEach((r) => {
-    remainder = remainder.replace(r, "");
-  });
-
-  remainder.split(/[,\s]+/).forEach((token) => {
-    const day = normalize(token);
-    if (day) allowed.add(day);
-  });
-
-  return allowed;
+  const name = doctorSpecialty.trim() || "General";
+  return {
+    id: `synthetic:${target || "general"}`,
+    name,
+    icon: "🏥",
+    description: `Consult with our ${name} specialists.`,
+  };
 }
 
-function withTimeout<T>(promise: PromiseLike<T>, timeoutMs = 15000): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => reject(new Error("REQUEST_TIMEOUT")), timeoutMs);
-    Promise.resolve(promise).then(
-      (result) => { clearTimeout(timeoutId); resolve(result); },
-      (error) => { clearTimeout(timeoutId); reject(error); }
-    );
-  });
-}
 
+// Booking now runs through /api/appointments, which reports a specific failure
+// code per cause, so this only needs to render an unexpected error verbatim.
 function getErrorMessage(error: unknown): string {
   const err = error as { message?: string; code?: string };
-  if (err?.message === "REQUEST_TIMEOUT") {
-    return "The request took too long. Please check your internet connection.";
-  }
-  if (err?.code === "23505" || /duplicate|unique|already exists/i.test(err?.message || "")) {
-    return "This appointment slot has just been booked. Please select another time.";
-  }
   if (/network|fetch|failed to fetch|connection/i.test(err?.message || "")) {
     return "Network error. Please check your internet connection.";
   }
@@ -234,12 +206,16 @@ function BookAppointmentContent() {
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
+  const [availabilityHours, setAvailabilityHours] = useState<AvailabilityWindow[]>([]);
+  const [availabilityPending, setAvailabilityPending] = useState(false);
   
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Bumped when a booking loses a race for a slot, so the grid reloads and the
+  // time just taken disappears instead of still being offered.
+  const [slotsVersion, setSlotsVersion] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  // ─────────── Load Data ───────────
   useEffect(() => {
     async function loadData() {
       try {
@@ -280,11 +256,18 @@ function BookAppointmentContent() {
           const reqDoctor = doctorData.find((d) => d.id === requestedDoctorId);
           if (reqDoctor) {
             setSelectedDoctor(reqDoctor);
-            const reqSpecialty = specialtyData.find((s) => s.name.toLowerCase() === reqDoctor.specialty.toLowerCase());
-            if (reqSpecialty) {
-              setSelectedSpecialty(reqSpecialty);
-              setCurrentStep(2);
-            }
+            // A doctor reached via ?doctorId= is already chosen; the specialty
+            // is implied. This used to require an exact specialties.name ==
+            // doctors.specialty string match, which silently stranded the
+            // wizard on step 1 whenever the two drifted apart.
+            setSelectedSpecialty(
+              findSpecialtyForDoctor(specialtyData, reqDoctor.specialty)
+            );
+            setCurrentStep(2);
+          } else {
+            setDataError(
+              "That doctor could not be found. Please pick a doctor from the list."
+            );
           }
         }
       } catch (error) {
@@ -301,6 +284,8 @@ function BookAppointmentContent() {
 
   // ─────────── Load time slots ───────────
   useEffect(() => {
+    let cancelled = false;
+
     async function loadTimeSlots() {
       if (!selectedDoctor || currentStep !== 3 || !selectedDate) return;
 
@@ -311,60 +296,67 @@ function BookAppointmentContent() {
 
         if (!supabase) throw new Error("Supabase is not configured.");
 
-        const allowedDays = parseAvailabilityToDays(selectedDoctor.availability);
-        const dateObj = new Date(`${selectedDate}T00:00:00`);
-        const selectedAbbr = WEEKDAY_ORDER[dateObj.getDay()];
+        const dateObj = fromLocalDateString(selectedDate);
+        const window = resolveWindow(
+          availabilityHours,
+          weekdayForDate(dateObj)
+        );
 
-        if (!allowedDays.has(selectedAbbr)) {
+        // Doctor does not consult on this weekday.
+        if (!window) {
           setTimeSlots([]);
           return;
         }
 
-        const { data: bookedAppointments, error: appointmentsError } = await supabase
-          .from("appointments")
-          .select("appointment_time")
-          .eq("doctor_id", selectedDoctor.id)
-          .eq("appointment_date", selectedDate)
-          .in("status", ["pending", "confirmed"]);
-
-        if (appointmentsError) throw appointmentsError;
-
-        const bookedTimes = new Set(
-          (bookedAppointments as BookedRow[] | null || []).map((a) =>
-            String(a.appointment_time).slice(0, 5)
-          )
+        const booked = await fetchBookedTimes(
+          selectedDoctor.id,
+          selectedDate
         );
+        if (cancelled) return;
 
-        const generatedSlots: string[] = [];
-        const startHour = 9;
-        const endHour = 17;
-        const isToday = selectedDate === getTodayLocalDate();
-        const now = new Date();
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-        for (let h = startHour; h < endHour; h++) {
-          for (let m = 0; m < 60; m += 30) {
-            const slotMinutes = h * 60 + m;
-            if (isToday && slotMinutes <= currentMinutes + 30) continue;
-            const time24 = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-            if (!bookedTimes.has(time24)) {
-              generatedSlots.push(formatTime(time24));
-            }
-          }
-        }
-
-        setTimeSlots(generatedSlots);
+        setTimeSlots(
+          buildAvailableSlots(window, { booked, selectedDate: dateObj })
+        );
       } catch (error) {
+        if (cancelled) return;
         console.error("Failed to load time slots:", error);
         const errorMsg = "Unable to load available time slots. Please try again.";
         setSlotsError(errorMsg);
         toast.error(errorMsg); // Global Toast
       } finally {
-        setSlotsLoading(false);
+        if (!cancelled) setSlotsLoading(false);
       }
     }
+
     loadTimeSlots();
-  }, [selectedDoctor, selectedDate, currentStep]);
+    return () => { cancelled = true; };
+  }, [selectedDoctor, selectedDate, currentStep, availabilityHours, slotsVersion]);
+
+  // ─────────── Load the doctor's weekly schedule ───────────
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAvailability() {
+      if (!selectedDoctor) {
+        setAvailabilityHours([]);
+        setAvailabilityPending(false);
+        return;
+      }
+
+      try {
+        setAvailabilityPending(true);
+        const hours = await fetchDoctorAvailability(selectedDoctor.id);
+        if (!cancelled) setAvailabilityHours(hours);
+      } catch {
+        if (!cancelled) setAvailabilityHours([]);
+      } finally {
+        if (!cancelled) setAvailabilityPending(false);
+      }
+    }
+
+    loadAvailability();
+    return () => { cancelled = true; };
+  }, [selectedDoctor]);
 
   function clearFieldError(field: keyof FieldErrors) {
     setFieldErrors((previous) => ({ ...previous, [field]: undefined }));
@@ -378,7 +370,9 @@ function BookAppointmentContent() {
     if (currentStep === 3) {
       if (!selectedDate) errors.date = "Please select an appointment date.";
       else if (selectedDate < getTodayLocalDate()) errors.date = "Please select today or a future date.";
+      else if (isSelectedDayClosed) errors.date = "The doctor is not available on this day. Please pick another date.";
       if (!selectedTime) errors.time = "Please select an available time slot.";
+      else if (timeSlots.length === 0 && !slotsLoading) errors.time = "No slots are available on this date. Please pick another date.";
     }
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -401,7 +395,7 @@ function BookAppointmentContent() {
     }
   }
 
-  // ─────────── Final Submit (Fixed Profiles Dependency) ───────────
+  // ─────────── Final Submit ───────────
   async function handleFinalSubmit() {
     if (!validateCurrentStep()) return;
 
@@ -409,64 +403,48 @@ function BookAppointmentContent() {
       setSubmitting(true);
       setSubmitError(null);
 
-      const { data: authData, error: authError } = await withTimeout(supabase!.auth.getUser());
-      if (authError || !authData?.user?.id) {
-        throw new Error("Your session could not be found. Please log in again.");
-      }
-
-      const userId = authData.user.id;
       const appointmentTime = convertDisplayTimeTo24Hour(selectedTime);
 
-      // Removed risky "profiles" table check that could cause 500 API errors.
-      // Supabase RLS will safely handle foreign key and auth validation organically.
+      // Booking goes through the app's own API rather than a direct insert.
+      // The API derives patient_id from the caller's token, re-validates the
+      // slot against the doctor's configured availability, and the database
+      // enforces that a live booking is unique per doctor/date/time. The
+      // duplicate pre-check that used to live here was racy: it and the insert
+      // were separate requests, so two patients booking one slot could both
+      // pass it.
+      const result = await bookAppointment({
+        doctorId: selectedDoctor!.id,
+        date: selectedDate,
+        time: appointmentTime,
+        notes: null,
+      });
 
-      const { data: existingAppointment, error: duplicateError } = await withTimeout(
-        supabase!
-          .from("appointments")
-          .select("id")
-          .eq("doctor_id", selectedDoctor!.id)
-          .eq("appointment_date", selectedDate)
-          .eq("appointment_time", appointmentTime)
-          .in("status", ["pending", "confirmed"])
-          .maybeSingle()
-      );
-      
-      if (duplicateError) throw duplicateError;
-      if (existingAppointment) {
-        toast.error("This time slot is no longer available. Please choose another time.");
-        setSelectedTime("");
-        setCurrentStep(3);
-        setSubmitting(false);
-        return;
+      if (!result.ok) {
+        // A lost race or a stale slot is recoverable: send the user back to the
+        // picker with the slot grid reloaded so they can choose another time.
+        if (isSlotConflict(result.code)) {
+          toast.error(result.message);
+          setSelectedTime("");
+          setSlotsVersion((v) => v + 1);
+          setCurrentStep(3);
+          return;
+        }
+
+        throw new Error(result.message);
       }
 
-      const { data: createdAppointment, error: insertError } = await withTimeout(
-        supabase!
-          .from("appointments")
-          .insert({
-            patient_id: userId,
-            doctor_id: selectedDoctor!.id,
-            appointment_date: selectedDate,
-            appointment_time: appointmentTime,
-            status: "pending",
-            notes: null,
-          })
-          .select("id, appointment_date, appointment_time, status")
-          .single()
-      );
-      
-      if (insertError) throw insertError;
-      if (!createdAppointment) throw new Error("Appointment was not created. Please try again.");
+      const created = result.data.appointment;
 
       toast.success("Appointment Booked Successfully!");
 
       const params = new URLSearchParams({
-        appointmentId: String(createdAppointment.id),
+        appointmentId: String(created.id),
+        doctorId: selectedDoctor!.id,
         doctor: selectedDoctor!.name,
         specialty: selectedSpecialty!.name,
-        date: String(createdAppointment.appointment_date),
+        date: String(created.appointment_date),
         time: selectedTime,
-        status: createdAppointment.status || "pending",
+        status: created.status || "pending",
       });
 
       router.push(`/appointment/confirm?${params.toString()}`);
@@ -480,9 +458,25 @@ function BookAppointmentContent() {
     }
   }
 
+  // A doctor belongs to the selected specialty. Routed through the same
+  // resolver used to preselect from ?doctorId= so a preselected doctor is
+  // never filtered out of its own list.
   const availableDoctors = selectedSpecialty
-    ? allDoctors.filter((doctor) => doctor.specialty.toLowerCase() === selectedSpecialty.name.toLowerCase())
+    ? allDoctors.filter(
+        (doctor) =>
+          findSpecialtyForDoctor([selectedSpecialty], doctor.specialty)
+            .id === selectedSpecialty.id
+      )
     : [];
+
+  const consultDays = availableWeekdays(availabilityHours);
+
+  const isSelectedDayClosed = Boolean(
+    selectedDoctor &&
+      !availabilityPending &&
+      consultDays.length > 0 &&
+      !consultDays.includes(weekdayForDate(fromLocalDateString(selectedDate)))
+  );
 
   if (dataError) {
     return (
@@ -599,7 +593,7 @@ function BookAppointmentContent() {
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={doctor.avatar} alt={doctor.name} className="h-16 w-16 rounded-full border-2 border-white object-cover shadow-sm" />
                         <div className="min-w-0 flex-1">
-                          <h3 className="font-semibold text-slate-900">Dr. {doctor.name}</h3>
+                          <h3 className="font-semibold text-slate-900"> {doctor.name}</h3>
                           <p className="text-sm text-blue-600">{selectedSpecialty?.name}</p>
                           <p className="mt-1 text-xs text-slate-500">⭐ {doctor.rating}</p>
                           {doctor.availability && <p className="mt-1 text-xs text-slate-400">Available: {doctor.availability}</p>}
@@ -638,9 +632,26 @@ function BookAppointmentContent() {
                   className="w-full rounded-lg border-2 border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100 sm:max-w-sm"
                 />
                 {fieldErrors.date && <p className="mt-2 text-sm font-medium text-red-600">{fieldErrors.date}</p>}
-                {selectedDoctor?.availability && (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Dr. {selectedDoctor.name} is available: <span className="font-medium text-slate-700">{selectedDoctor.availability}</span>
+
+                {selectedDoctor && !availabilityPending && (
+                  consultDays.length === WEEK_DAYS.length ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Dr. {selectedDoctor.name} is available all week.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Dr. {selectedDoctor.name} consults on:{" "}
+                      <span className="font-medium text-slate-700">
+                        {consultDays.join(", ")}
+                      </span>
+                    </p>
+                  )
+                )}
+
+                {isSelectedDayClosed && (
+                  <p className="mt-2 text-sm font-medium text-amber-700">
+                    Dr. {selectedDoctor?.name} is not available on this day.
+                    Please pick another date.
                   </p>
                 )}
               </div>
@@ -684,7 +695,6 @@ function BookAppointmentContent() {
             </section>
           )}
 
-          {/* STEP 4 */}
           {currentStep === 4 && (
             <section>
               <h2 className="mb-2 text-2xl font-bold text-slate-900">Confirm Appointment</h2>
@@ -698,7 +708,7 @@ function BookAppointmentContent() {
                   </div>
                   <div className="flex items-start justify-between border-b border-slate-200 pb-4">
                     <p className="text-sm text-slate-500">Doctor</p>
-                    <p className="font-semibold text-slate-900">Dr. {selectedDoctor?.name}</p>
+                    <p className="font-semibold text-slate-900">{selectedDoctor?.name}</p>
                   </div>
                   <div className="flex items-start justify-between border-b border-slate-200 pb-4">
                     <p className="text-sm text-slate-500">Date</p>
@@ -714,14 +724,23 @@ function BookAppointmentContent() {
           )}
         </div>
 
-        {/* Sticky Navigation */}
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-sm">
+          {submitError && (
+            <div
+              role="alert"
+              className="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+            >
+              {submitError}
+            </div>
+          )}
+
           <div className="container mx-auto flex flex-col-reverse gap-3 px-4 py-4 sm:flex-row sm:justify-between">
             <button
               type="button"
               onClick={handleBack}
               disabled={currentStep === 1 || submitting}
-              className="rounded-lg border-2 border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border-2 border-slate-200 bg-white px-6 py-3 text-sm font-semibold
+               text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Back
             </button>
@@ -756,7 +775,8 @@ function BookAppointmentContent() {
 
 export default function BookAppointmentPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-slate-500">Loading booking details...</div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-slate-500">
+      Loading booking details...</div>}>
       <BookAppointmentContent />
     </Suspense>
   );

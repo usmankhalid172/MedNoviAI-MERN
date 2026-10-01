@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +20,7 @@ import {
   Menu,
   X,
   UserRound,
+  ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -92,6 +93,53 @@ function formatAppointmentPreview(date: string, time: string): string {
   }
 }
 
+/**
+ * How a booking reads on the patient's side.
+ *
+ * The doctor writes `confirmed` to approve and `cancelled` to reject, so both
+ * decisions are spelled out here rather than showing the raw column value -
+ * "Cancelled" on its own does not tell the patient their request was declined.
+ *
+ * Each entry carries two chips: `chip` for the navy gradient cards, where the
+ * text has to stay light, and `chipLight` for the white approval table.
+ */
+const STATUS_PRESENTATION: Record<
+  AppointmentStatus,
+  { label: string; chip: string; chipLight: string; note: string }
+> = {
+  pending: {
+    label: "Awaiting Approval",
+    chip: "bg-amber-500/20 text-amber-100 border-amber-400/30",
+    chipLight: "bg-amber-50 text-amber-700 border-amber-200",
+    note: "Your doctor has not responded yet.",
+  },
+  confirmed: {
+    label: "Approved",
+    chip: "bg-emerald-500/20 text-emerald-100 border-emerald-400/30",
+    chipLight: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    note: "Your doctor approved this appointment.",
+  },
+  cancelled: {
+    label: "Rejected",
+    chip: "bg-red-500/20 text-red-100 border-red-400/30",
+    chipLight: "bg-red-50 text-red-700 border-red-200",
+    note: "Your doctor declined this appointment.",
+  },
+  completed: {
+    label: "Completed",
+    chip: "bg-blue-500/20 text-blue-100 border-blue-400/30",
+    chipLight: "bg-blue-50 text-blue-700 border-blue-200",
+    note: "This visit has already taken place.",
+  },
+};
+
+const DEFAULT_STATUS_PRESENTATION = {
+  label: "Unknown",
+  chip: "bg-slate-500/20 text-slate-100 border-slate-400/30",
+  chipLight: "bg-slate-100 text-slate-700 border-slate-200",
+  note: "This appointment has an unrecognised status.",
+};
+
 export default function PatientDashboardPage() {
   const router = useRouter();
   const { user, isInitializing, logout } = useAuth();
@@ -99,9 +147,11 @@ export default function PatientDashboardPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // ─── Appointments state ───
+  const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
   const [upcomingAppointments, setUpcomingAppointments] = useState<Appointment[]>([]);
   const [recentAppointments, setRecentAppointments] = useState<Appointment[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const handleLogout = () => {
     logout();
@@ -129,6 +179,7 @@ export default function PatientDashboardPage() {
 
   // ─── Fetch patient's appointments (two-query pattern — no FK join) ───
   const userId = user?.id;
+  const firstLoadRef = useRef(true);
 
   useEffect(() => {
     if (!userId || !supabase) {
@@ -136,10 +187,13 @@ export default function PatientDashboardPage() {
     }
 
     let cancelled = false;
+    const silent = !firstLoadRef.current;
 
     async function loadAppointments() {
       try {
-        setAppointmentsLoading(true);
+        if (!silent) {
+          setAppointmentsLoading(true);
+        }
 
         const { data: appointments, error: apptError } = await supabase!
           .from("appointments")
@@ -231,6 +285,7 @@ export default function PatientDashboardPage() {
           .slice(0, 3);
 
         if (!cancelled) {
+          setAllAppointments(merged);
           setUpcomingAppointments(upcoming);
           setRecentAppointments(recent);
         }
@@ -243,16 +298,46 @@ export default function PatientDashboardPage() {
           hint: e?.hint,
         });
       } finally {
-        if (!cancelled) setAppointmentsLoading(false);
+        if (!cancelled && !silent) {
+          setAppointmentsLoading(false);
+        }
       }
     }
 
     loadAppointments();
+    firstLoadRef.current = false;
 
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, refreshKey]);
+
+  // ─── Pick up approve / reject decided on the doctor's dashboard ───
+  useEffect(() => {
+    // The doctor acts in their own session, so there is nothing to subscribe to
+    // here: the dashboard re-asks whenever the patient comes back to the tab.
+    // "focus" covers switching windows, and "visibilitychange" covers returning
+    // from another tab or route on mobile, where focus is not reliably fired.
+    // Bumping `refreshKey` re-runs the fetch effect, which then swaps the rows
+    // in place instead of reloading the page.
+    const refetch = () => {
+      setRefreshKey((key) => key + 1);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refetch();
+      }
+    };
+
+    window.addEventListener("focus", refetch);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", refetch);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -320,6 +405,27 @@ export default function PatientDashboardPage() {
   // ─── Preview data for summary cards ───
   const nextUpcoming = upcomingAppointments[0] ?? null;
   const lastRecent = recentAppointments[0] ?? null;
+
+  /**
+   * Bookings the doctor still owes an answer on.
+   *
+   * Surfaced separately because a rejection is written as `cancelled`, which the
+   * upcoming/recent split files under history - a booking the doctor declined
+   * could otherwise sink below older completed visits and look like it simply
+   * never happened.
+   */
+  const decidedBookings = allAppointments
+    .filter(
+      (appointment) =>
+        appointment.status === "confirmed" ||
+        appointment.status === "cancelled"
+    )
+    .slice(0, 4);
+
+  // ─── Waiting on the doctor ───
+  const awaitingApproval = allAppointments.filter(
+    (appointment) => appointment.status === "pending"
+  );
 
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-800">
@@ -507,9 +613,24 @@ export default function PatientDashboardPage() {
             {/* Preview of next appointment */}
             {!appointmentsLoading && nextUpcoming && (
               <div className="bg-white/10 border border-white/15 rounded-xl px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">
-                  Next Visit
-                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">
+                    Next Visit
+                  </p>
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
+                      (
+                        STATUS_PRESENTATION[nextUpcoming.status] ??
+                        DEFAULT_STATUS_PRESENTATION
+                      ).chip
+                    }`}
+                  >
+                    {(
+                      STATUS_PRESENTATION[nextUpcoming.status] ??
+                      DEFAULT_STATUS_PRESENTATION
+                    ).label}
+                  </span>
+                </div>
                 <p className="mt-1 text-sm font-semibold text-white truncate">
                   {nextUpcoming.doctor?.full_name ?? "Doctor"}
                   {nextUpcoming.doctor?.specialty
@@ -522,7 +643,21 @@ export default function PatientDashboardPage() {
                     nextUpcoming.appointment_time
                   )}
                 </p>
+                <p className="mt-1 text-[11px] text-blue-100/70">
+                  {(
+                    STATUS_PRESENTATION[nextUpcoming.status] ??
+                    DEFAULT_STATUS_PRESENTATION
+                  ).note}
+                </p>
               </div>
+            )}
+
+            {awaitingApproval.length > 0 && (
+              <p className="text-xs text-blue-100/80">
+                {awaitingApproval.length}{" "}
+                {awaitingApproval.length === 1 ? "booking is" : "bookings are"}{" "}
+                waiting on your doctor&apos;s approval.
+              </p>
             )}
 
             <Link href="/patient/appointments" className="block">
@@ -560,9 +695,24 @@ export default function PatientDashboardPage() {
             {/* Preview of last appointment */}
             {!appointmentsLoading && lastRecent && (
               <div className="bg-white/10 border border-white/15 rounded-xl px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">
-                  Last Visit
-                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-200">
+                    Last Visit
+                  </p>
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
+                      (
+                        STATUS_PRESENTATION[lastRecent.status] ??
+                        DEFAULT_STATUS_PRESENTATION
+                      ).chip
+                    }`}
+                  >
+                    {(
+                      STATUS_PRESENTATION[lastRecent.status] ??
+                      DEFAULT_STATUS_PRESENTATION
+                    ).label}
+                  </span>
+                </div>
                 <p className="mt-1 text-sm font-semibold text-white truncate">
                   {lastRecent.doctor?.full_name ?? "Doctor"}
                   {lastRecent.doctor?.specialty
@@ -574,6 +724,12 @@ export default function PatientDashboardPage() {
                     lastRecent.appointment_date,
                     lastRecent.appointment_time
                   )}
+                </p>
+                <p className="mt-1 text-[11px] text-blue-100/70">
+                  {(
+                    STATUS_PRESENTATION[lastRecent.status] ??
+                    DEFAULT_STATUS_PRESENTATION
+                  ).note}
                 </p>
               </div>
             )}
@@ -589,6 +745,103 @@ export default function PatientDashboardPage() {
             </Link>
           </div>
         </div>
+
+        {/* ─── Doctor's decision on each booking ─── */}
+        <section
+          aria-label="Doctor's decision on your bookings"
+          className="bg-linear-to-r from-[#0e2a47] via-[#102a45] to-[#1e3a8a] text-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-extrabold text-white underline flex items-center gap-2">
+              <ClipboardCheck className="w-5 h-5 text-white" />
+              Booking Approval Status
+            </h2>
+
+            <span className="text-xs font-semibold bg-blue-50 text-[#2563eb] px-3 py-1 rounded-full">
+              {appointmentsLoading
+                ? "Checking…"
+                : `${awaitingApproval.length} awaiting doctor`}
+            </span>
+          </div>
+
+          <p className="text-[14px] text-white">
+            Every booking you make is sent to the doctor&apos;s dashboard. They
+            approve or reject it there, and their decision appears below.
+          </p>
+
+          {appointmentsLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((item) => (
+                <div
+                  key={item}
+                  className="h-14 w-full rounded-xl bg-slate-100 animate-pulse"
+                />
+              ))}
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {[...awaitingApproval, ...decidedBookings]
+                .slice(0, 6)
+                .map((appointment) => {
+                  const presentation =
+                    STATUS_PRESENTATION[appointment.status] ??
+                    DEFAULT_STATUS_PRESENTATION;
+
+                  return (
+                    <li
+                      key={appointment.id}
+                      className="flex flex-wrap items-center justify-between gap-3 py-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">
+                          {appointment.doctor?.full_name ?? "Doctor"}
+                          {appointment.doctor?.specialty
+                            ? ` · ${appointment.doctor.specialty}`
+                            : ""}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {formatAppointmentPreview(
+                            appointment.appointment_date,
+                            appointment.appointment_time
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1
+                             text-[11px] font-bold ${presentation.chipLight}`}
+                        >
+                          {presentation.label}
+                        </span>
+                        <p className="text-[11px] text-slate-200 mt-1">
+                          {presentation.note}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+
+              {awaitingApproval.length === 0 &&
+                decidedBookings.length === 0 && (
+                  <li className="py-6 text-center text-sm text-red-600">
+                    You have not booked any appointments yet.
+                  </li>
+                )}
+            </ul>
+          )}
+
+          <Link href="/patient/appointments" className="block">
+            <Button
+              variant="outline"
+              className="w-fit text-white text-xs rounded-2xl h-10 bg-blue-500 hover:bg-blue-700
+               cursor-pointer gap-2 hover:text-white"
+            >
+              View all my appointments
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Button>
+          </Link>
+        </section>
 
         {/* Vitals */}
         <div>

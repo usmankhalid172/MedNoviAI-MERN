@@ -29,7 +29,19 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import api from "@/lib/api";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { FEATURED_DOCTOR, isFeaturedDoctor } from "@/lib/featuredDoctor";
+import {
+  WEEK_DAYS,
+  buildAvailableSlots,
+  fetchBookedTimes,
+  fetchDoctorAvailability,
+  resolveWindow,
+  toLocalDateString,
+  weekdayForDate,
+  type AvailabilityWindow,
+} from "@/lib/doctorSlots";
+import { bookAppointment, isSlotConflict } from "@/lib/appointmentsClient";
 
 /* ------------------------------ Types ------------------------------ */
 
@@ -56,6 +68,51 @@ interface Review {
   comment: string;
 }
 
+type Row = Record<string, unknown>;
+
+function pick(row: Row, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+function pickText(row: Row, keys: string[]): string {
+  const value = pick(row, keys);
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  return "";
+}
+
+function pickNumber(row: Row, keys: string[]): number {
+  const value = pick(row, keys);
+  const num = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
+const DOCTOR_FIELDS = {
+  name: ["full_name", "name", "doctor_name"],
+  specialty: ["specialty", "specialty_name"],
+  image: ["avatar_url", "avatar", "image", "image_url", "photo_url"],
+  rating: ["rating", "average_rating"],
+  reviewCount: ["reviews_count", "review_count", "total_reviews"],
+  experience: ["experience_years", "years_of_experience", "experience"],
+  fee: ["consultation_fee", "fee", "consultationFee"],
+  location: ["location", "clinic_name", "clinic_address", "clinic"],
+  about: ["bio", "biography", "about", "description"],
+  education: ["education", "qualifications", "degrees"],
+  certifications: ["certifications", "licenses"],
+} as const;
+
+const REVIEW_FIELDS = {
+  id: ["id", "review_id"],
+  patientName: ["patient_name", "patient", "author_name", "user_name", "reviewer_name"],
+  rating: ["rating", "stars", "score"],
+  date: ["created_at", "review_date", "date"],
+  comment: ["comment", "review", "text", "content", "feedback"],
+} as const;
+
 /* ----------------------------- Constants ---------------------------- */
 
 const faqs = [
@@ -67,7 +124,7 @@ const faqs = [
   {
     question: "How can I book an appointment?",
     answer:
-      "Select an available date and time slot from the Availability tab, then click the 'Book Appointment' button to confirm your booking.",
+      "Pick a date from the Availability tab, then either 'Quick book' the slot directly or 'Continue in booking wizard' to review everything before confirming.",
   },
   {
     question: "What is the consultation fee?",
@@ -81,7 +138,12 @@ const faqs = [
   },
 ];
 
-const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+// Never assert a clinic or a biography the doctor has not supplied. Showing
+// "MedNovi Medical Center" or a generated sentence would put unverified
+// claims about a real practitioner on a public medical page.
+const LOCATION_NOT_SET = "Clinic location not provided";
+const ABOUT_NOT_SET =
+  "This doctor has not added a biography yet.";
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -103,6 +165,28 @@ function sameDay(a: Date, b: Date) {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+
+function toList(value: string[] | string | null | undefined): string[] {
+  if (Array.isArray(value)) return value.filter((item) => typeof item === "string" && item.trim().length > 0);
+  if (typeof value === "string") {
+    return value
+      .split(/[,\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+
+function toTwentyFourHour(time: string) {
+  const [timePart, modifier] = time.split(" ");
+  const [hStr, mStr] = timePart.split(":");
+  let hours = Number(hStr);
+  const minutes = Number(mStr);
+  if (modifier === "PM" && hours !== 12) hours += 12;
+  if (modifier === "AM" && hours === 12) hours = 0;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
 }
 
 /* --------------------------- Sub-components ------------------------ */
@@ -296,7 +380,9 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
   const [doctor, setDoctor] = useState<Doctor | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [availability, setAvailability] = useState<string[]>([]);
+  const [availabilityHours, setAvailabilityHours] = useState<AvailabilityWindow[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsVersion, setSlotsVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -307,17 +393,52 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
     let cancelled = false;
 
     async function fetchDoctor() {
+      if (!isSupabaseConfigured || !supabase) {
+        if (!cancelled) {
+          setNotFound(true);
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
         setLoading(true);
-        const res = await api.get(`/doctors/${doctorId}`);
-        if (!cancelled) {
-          const data = res.data?.doctor || res.data?.data || res.data;
-          if (data && data.id) {
-            setDoctor(data);
-          } else {
-            setNotFound(true);
-          }
+        const { data, error } = await supabase
+          .from("doctors")
+          .select("*")
+          .eq("id", doctorId)
+          .maybeSingle();
+
+        if (cancelled) return;
+        if (error || !data) {
+          setNotFound(true);
+          return;
         }
+
+        const row = data as Row;
+        const rowId = String(pick(row, ["id"]) ?? doctorId);
+        const rawName = pickText(row, [...DOCTOR_FIELDS.name]);
+        const isFeatured = isFeaturedDoctor({ id: rowId, name: rawName });
+        const name = isFeatured ? FEATURED_DOCTOR.name : rawName || "Doctor";
+        const specialty = pickText(row, [...DOCTOR_FIELDS.specialty]) || "General Medicine";
+        const image = pickText(row, [...DOCTOR_FIELDS.image]);
+
+        setDoctor({
+          id: rowId,
+          name,
+          specialty,
+          image: image || undefined,
+          rating: isFeatured
+            ? FEATURED_DOCTOR.rating
+            : pickNumber(row, [...DOCTOR_FIELDS.rating]),
+          reviewCount: pickNumber(row, [...DOCTOR_FIELDS.reviewCount]),
+          experience: pickNumber(row, [...DOCTOR_FIELDS.experience]),
+          fee: pickNumber(row, [...DOCTOR_FIELDS.fee]),
+          location: pickText(row, [...DOCTOR_FIELDS.location]) || LOCATION_NOT_SET,
+          about: pickText(row, [...DOCTOR_FIELDS.about]) || ABOUT_NOT_SET,
+          education: toList(pick(row, [...DOCTOR_FIELDS.education]) as string[] | string | null),
+          certifications: toList(pick(row, [...DOCTOR_FIELDS.certifications]) as string[] | string | null),
+        });
       } catch {
         if (!cancelled) setNotFound(true);
       } finally {
@@ -326,19 +447,52 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
     }
 
     async function fetchReviews() {
+      if (!isSupabaseConfigured || !supabase) return;
+
       try {
-        const res = await api.get(`/doctors/${doctorId}/reviews`);
-        const data = res.data?.reviews || res.data?.data || res.data;
-        if (!cancelled && Array.isArray(data)) {
-          setReviews(data);
-        }
+        const { data, error } = await supabase
+          .from("doctor_reviews")
+          .select("*")
+          .eq("doctor_id", doctorId)
+          .order("created_at", { ascending: false });
+
+        if (cancelled || error || !Array.isArray(data)) return;
+
+        setReviews(
+          (data as Row[]).map((row, index) => {
+            const rawDate = pickText(row, [...REVIEW_FIELDS.date]);
+            const parsed = rawDate ? new Date(rawDate) : null;
+            return {
+              id: String(pick(row, [...REVIEW_FIELDS.id]) ?? `review-${index}`),
+              patientName: pickText(row, [...REVIEW_FIELDS.patientName]) || "Verified Patient",
+              rating: pickNumber(row, [...REVIEW_FIELDS.rating]),
+              date:
+                parsed && !Number.isNaN(parsed.getTime())
+                  ? parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+                  : rawDate,
+              comment: pickText(row, [...REVIEW_FIELDS.comment]),
+            };
+          })
+        );
       } catch {
-        // Reviews endpoint may not exist yet — acceptable
+        // Reviews are optional — the tab falls back to an empty state
+      }
+    }
+
+    async function fetchAvailabilityHours() {
+      if (!isSupabaseConfigured || !supabase) return;
+
+      try {
+        const hours = await fetchDoctorAvailability(doctorId);
+        if (!cancelled) setAvailabilityHours(hours);
+      } catch {
+        // Falls back to the default consultation window
       }
     }
 
     fetchDoctor();
     fetchReviews();
+    fetchAvailabilityHours();
     return () => { cancelled = true; };
   }, [doctorId]);
 
@@ -347,39 +501,35 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
 
     let cancelled = false;
 
-    Promise.resolve().then(() => {
-      if (cancelled) return;
+    async function loadSlots() {
       setSlotsLoading(true);
       setAvailability([]);
-    });
 
-    api
-      .get(`/doctors/${doctorId}/availability`, {
-        params: { date: selectedDate.toISOString().split("T")[0] },
-      })
-      .then((res) => {
-        const data = res.data?.slots || res.data?.availability || res.data?.data || res.data;
-        if (!cancelled && Array.isArray(data)) {
-          setAvailability(
-            data
-              .map((slot: string | { time: string }) =>
-                typeof slot === "string" ? slot : slot?.time
-              )
-              .filter(Boolean)
-          );
-        } else if (!cancelled) {
-          setAvailability([]);
-        }
-      })
-      .catch(() => {
+      try {
+        if (!supabase) return;
+
+        const dateStr = toLocalDateString(selectedDate);
+        const weekday = weekdayForDate(selectedDate);
+
+        const window = resolveWindow(availabilityHours, weekday);
+        if (!window) return;
+
+        const booked = await fetchBookedTimes(doctorId, dateStr);
+        if (cancelled) return;
+
+        setAvailability(
+          buildAvailableSlots(window, { booked, selectedDate })
+        );
+      } catch {
         if (!cancelled) setAvailability([]);
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setSlotsLoading(false);
-      });
+      }
+    }
 
+    loadSlots();
     return () => { cancelled = true; };
-  }, [doctorId, doctor, selectedDate]);
+  }, [doctorId, doctor, selectedDate, availabilityHours, slotsVersion]);
 
   if (loading) return <ProfileSkeleton />;
 
@@ -400,33 +550,63 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
             Browse doctors
           </Link>
         </div>
+        
       </PageLayout>
     );
   }
 
-  const initials = doctor.name
+  const initials = (doctor.name || "Dr.")
     .replace("Dr. ", "")
     .split(" ")
+    .filter(Boolean)
     .map((w) => w[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
 
   const handleBook = async () => {
-    if (!selectedSlot) return;
+    if (!selectedSlot || !doctor) return;
+
     setBooking(true);
     try {
-      await api.post("/appointments", {
+      // Same API the booking wizard uses, so both entry points validate the slot
+      // identically: patient_id comes from the caller's token, availability is
+      // re-checked server-side, and the database rejects a duplicate live
+      // booking. The racy client-side pre-check that used to live here was
+      // two separate requests, so two patients could both pass it.
+      const result = await bookAppointment({
         doctorId,
-        doctorName: doctor.name,
-        specialty: doctor.specialty,
-        date: selectedDate.toISOString().split("T")[0],
-        time: selectedSlot,
-        location: "MedNovi Medical Center, Suite 402",
+        date: toLocalDateString(selectedDate),
+        time: toTwentyFourHour(selectedSlot),
+        notes: null,
       });
+
+      if (!result.ok) {
+        if (result.code === "unauthorized") {
+          toast.error("Please log in", {
+            description: "You need an account before booking an appointment.",
+          });
+          return;
+        }
+
+        if (isSlotConflict(result.code)) {
+          toast.error("This time slot is no longer available", {
+            description: result.message,
+          });
+          setSelectedSlot(null);
+          setSlotsVersion((v) => v + 1);
+          return;
+        }
+
+        toast.error("Booking failed", { description: result.message });
+        return;
+      }
+
+      setSlotsVersion((v) => v + 1);
       toast.success("Appointment confirmed", {
         description: `${doctor.name} on ${selectedDate.toDateString()} at ${selectedSlot}.`,
       });
+      setSelectedSlot(null);
     } catch {
       toast.error("Booking failed", {
         description: "We could not submit your appointment. Please try again.",
@@ -482,33 +662,63 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
                     <span className="font-bold text-lg">{doctor.rating}</span>
                     <span className="text-muted-foreground text-sm">({doctor.reviewCount} reviews)</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Briefcase className="size-4 text-primary" />
-                    <span className="font-medium">{doctor.experience} years</span>
-                    <span className="text-muted-foreground">experience</span>
-                  </div>
+                  {doctor.experience > 0 ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Briefcase className="size-4 text-primary" />
+                      <span className="font-medium">{doctor.experience} years</span>
+                      <span className="text-muted-foreground">experience</span>
+                    </div>
+                  ) : null}
                   <div className="flex items-center gap-2 text-sm">
                     <MapPin className="size-4 text-primary" />
                     <span className="text-muted-foreground">{doctor.location}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="font-medium text-primary">PKR {doctor.fee.toLocaleString()}</span>
-                    <span className="text-muted-foreground">per consultation</span>
-                  </div>
+                  {doctor.fee > 0 ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-medium text-primary">PKR {doctor.fee.toLocaleString()}</span>
+                      <span className="text-muted-foreground">per consultation</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="w-full md:w-auto md:sticky md:top-6">
-                <Button
-                  size="lg"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md"
-                  onClick={handleBook}
-                  disabled={!selectedSlot || booking}
+              <div className="w-full md:w-auto md:sticky md:top-6 space-y-3">
+                <Link
+                  href={`/appointment/book?doctorId=${encodeURIComponent(doctorId)}`}
+                  className={cn(
+                    buttonVariants({
+                      size: "lg",
+                      className:
+                        "w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md",
+                    })
+                  )}
                 >
                   <CalendarCheck className="size-5 mr-2" />
-                  {booking ? "Booking..." : selectedSlot ? "Book Appointment" : "Select a Slot First"}
-                </Button>
-                <p className="text-xs text-muted-foreground text-center mt-2">Click to book your appointment</p>
+                  Book Appointment
+                </Link>
+                <p className="text-xs text-muted-foreground text-center">
+                  Opens the booking wizard with {doctor.name} pre-selected
+                </p>
+
+                {/* Quick book: only offered once a slot is picked below. */}
+                {selectedSlot ? (
+                  <div className="space-y-2">
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="w-full font-semibold"
+                      onClick={handleBook}
+                      disabled={booking}
+                    >
+                      <CalendarCheck className="size-4 mr-2" />
+                      {booking ? "Booking..." : `Quick book ${selectedSlot}`}
+                    </Button>
+                    <p className="text-xs text-muted-foreground text-center">
+                      Or skip the wizard and take the {selectedSlot} slot you
+                      selected.
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
           </CardContent>
@@ -541,12 +751,16 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
                     Education
                   </h3>
                   <ul className="space-y-3">
-                    {doctor.education.map((e, i) => (
-                      <li key={i} className="flex gap-3 text-sm">
-                        <span className="text-primary font-bold mt-1">•</span>
-                        <span className="text-muted-foreground">{e}</span>
-                      </li>
-                    ))}
+                    {doctor.education.length === 0 ? (
+                      <li className="text-sm text-muted-foreground">Education details not available yet.</li>
+                    ) : (
+                      doctor.education.map((e, i) => (
+                        <li key={i} className="flex gap-3 text-sm">
+                          <span className="text-primary font-bold mt-1">•</span>
+                          <span className="text-muted-foreground">{e}</span>
+                        </li>
+                      ))
+                    )}
                   </ul>
                 </CardContent>
               </Card>
@@ -558,12 +772,16 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
                     Certifications
                   </h3>
                   <ul className="space-y-3">
-                    {doctor.certifications.map((c, i) => (
-                      <li key={i} className="flex gap-3 text-sm">
-                        <span className="text-primary font-bold mt-1">•</span>
-                        <span className="text-muted-foreground">{c}</span>
-                      </li>
-                    ))}
+                    {doctor.certifications.length === 0 ? (
+                      <li className="text-sm text-muted-foreground">Certifications not available yet.</li>
+                    ) : (
+                      doctor.certifications.map((c, i) => (
+                        <li key={i} className="flex gap-3 text-sm">
+                          <span className="text-primary font-bold mt-1">•</span>
+                          <span className="text-muted-foreground">{c}</span>
+                        </li>
+                      ))
+                    )}
                   </ul>
                 </CardContent>
               </Card>
@@ -580,7 +798,19 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
               slots={availability}
               slotsLoading={slotsLoading}
             />
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <Link
+                href={`/appointment/book?doctorId=${encodeURIComponent(doctorId)}`}
+                className={cn(
+                  buttonVariants({
+                    size: "lg",
+                    variant: "outline",
+                    className: "w-full sm:w-auto font-semibold",
+                  })
+                )}
+              >
+                Continue in booking wizard
+              </Link>
               <Button
                 size="lg"
                 className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
@@ -588,7 +818,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
                 disabled={!selectedSlot || booking}
               >
                 <CalendarCheck className="size-4" />
-                {booking ? "Booking..." : selectedSlot ? "Book Appointment" : "Select a Slot First"}
+                {booking ? "Booking..." : selectedSlot ? `Book ${selectedSlot}` : "Select a Slot First"}
               </Button>
             </div>
           </TabsContent>
@@ -639,7 +869,7 @@ export default function DoctorProfileView({ doctorId }: { doctorId: string }) {
                       </div>
                       <p className="flex items-start gap-2 text-sm text-muted-foreground leading-relaxed">
                         <MessageSquare className="mt-0.5 size-4 shrink-0 text-primary/50" />
-                        {review.comment}
+                        {review.comment || "No written feedback was left for this visit."}
                       </p>
                       <div className="flex items-center gap-1.5 text-xs text-green-600 pt-1">
                         <ThumbsUp className="size-3.5" />

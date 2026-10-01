@@ -94,11 +94,16 @@ export default function AuthForm({ mode }: AuthFormProps) {
       return;
     }
 
+    if (!supabase) {
+      showErrorToast("Supabase is not configured. Check .env.local");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       if (isSignUp) {
-        const { data, error } = await supabase!.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: normalizedEmail,
           password,
           options: {
@@ -151,7 +156,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
         return;
       }
 
-      const { data, error } = await supabase!.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });

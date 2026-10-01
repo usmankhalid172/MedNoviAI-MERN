@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { cancelAppointment } from "@/lib/appointmentsClient";
 
 interface Props {
   appointmentId: string;
@@ -18,29 +18,22 @@ export default function CancelModal({
   const [error, setError] = useState<string | null>(null);
 
   const handleCancel = async () => {
-    if (!supabase) {
-      setError("Supabase is not configured");
+    setLoading(true);
+    setError(null);
+
+    // Goes through /api/appointments. The previous direct `update` here could
+    // not distinguish "cancelled" from "RLS returned zero rows", so it reported
+    // success even when nothing was written. The API checks the affected row.
+    const result = await cancelAppointment(appointmentId);
+
+    setLoading(false);
+
+    if (!result.ok) {
+      setError(result.message);
       return;
     }
 
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { error: updateError } = await supabase
-        .from("appointments")
-        .update({ status: "cancelled" })
-        .eq("id", appointmentId);
-
-      if (updateError) throw updateError;
-      onSuccess();
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to cancel appointment";
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
+    onSuccess();
   };
 
   return (

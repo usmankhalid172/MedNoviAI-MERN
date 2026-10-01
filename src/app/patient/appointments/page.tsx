@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Appointment } from "@/types/appointment";
+import { listAppointments } from "@/lib/appointmentsClient";
 import AppointmentCard from "@/components/appointments/AppointmentCard";
 import AppointmentSkeleton from "@/components/appointments/AppointmentSkeleton";
 import EmptyAppointments from "@/components/appointments/EmptyAppointments";
@@ -13,21 +13,6 @@ import Navbar from "@/components/shared/Navbar";
 import Link from "next/link";
 
 type Tab = "upcoming" | "past";
-
-type AppointmentRow = Appointment & {
-  doctor_id: string | null;
-};
-
-type DoctorRow = {
-  id: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  specialty: string | null;
-};
-
-function getSpecialtyName(doctor: DoctorRow) {
-  return doctor.specialty ?? "General";
-}
 
 /**
  * Returns today's date in YYYY-MM-DD using LOCAL time, not UTC.
@@ -43,7 +28,7 @@ function getTodayLocalDate(): string {
 }
 
 export default function AppointmentsPage() {
-  const { user, isLoggedIn, isInitializing } = useAuth();
+  const { isInitializing } = useAuth();
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,121 +38,109 @@ export default function AppointmentsPage() {
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [rescheduleAppt, setRescheduleAppt] = useState<Appointment | null>(null);
 
+  // Bumped after a cancel or reschedule so the list refetches. This used to be
+  // window.location.reload(), which discarded the whole page and lost the active
+  // tab and scroll position.
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Guards against a state update after the page unmounts. The fetch is fired
+  // from window/document listeners, so it can resolve after navigation.
+  const mountedRef = useRef(true);
+
+  /**
+   * Reloads the list from the API.
+   *
+   * `silent` is used for the focus/visibility refetch: it replaces the rows in
+   * place instead of flipping `loading`, so a booking made elsewhere appears
+   * without the whole list collapsing into skeletons and back.
+   */
+  const fetchAppointments = async (silent = false) => {
+    if (!mountedRef.current) return;
+
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
+
+    const result = await listAppointments({ scope: "patient" });
+
+    if (!mountedRef.current) return;
+
+    if (!result.ok) {
+      setError(result.message);
+      setLoading(false);
+      return;
+    }
+
+    setAppointments(
+      result.data.appointments.map(
+        (row): Appointment => ({
+          id: row.id,
+          patient_id: row.patient_id,
+          doctor_id: row.doctor_id,
+          appointment_date: row.appointment_date,
+          appointment_time: row.appointment_time,
+          status: row.status,
+          notes: row.notes,
+          created_at: row.created_at,
+          doctor: row.doctor
+            ? {
+                id: row.doctor.id,
+                full_name: row.doctor.full_name ?? undefined,
+                avatar_url: row.doctor.avatar_url ?? undefined,
+                specialty: row.doctor.specialty ?? undefined,
+              }
+            : null,
+        })
+      )
+    );
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (isInitializing) return;
 
-    let isMounted = true;
-
-    const load = async () => {
-      // ── 1. Make sure Supabase is configured ──
-      if (!supabase) {
-        if (isMounted) {
-          setError("Supabase is not configured. Check .env.local");
-          setLoading(false);
-        }
-        return;
-      }
-
-      // ── 2. Get the user from Supabase Auth directly (fallback to useAuth) ──
-      let userId = user?.id;
-
-      if (!userId) {
-        const { data: authData } = await supabase.auth.getUser();
-        userId = authData?.user?.id;
-      }
-
-      if (!userId) {
-        if (isMounted) {
-          setError("Please login to view your appointments");
-          setLoading(false);
-        }
-        return;
-      }
-
-      try {
-        if (isMounted) {
-          setLoading(true);
-          setError(null);
-        }
-
-        // ── 3. Fetch appointments for this patient ──
-        const { data, error: fetchError } = await supabase
-          .from("appointments")
-          .select("*")
-          .eq("patient_id", userId)
-          .order("appointment_date", { ascending: false })
-          .order("appointment_time", { ascending: false });
-
-        if (fetchError) throw fetchError;
-
-        const appointmentRows = (data ?? []) as AppointmentRow[];
-
-        // ── 4. Fetch linked doctors ──
-        const doctorIds = [
-          ...new Set(
-            appointmentRows
-              .map((appointment) => appointment.doctor_id)
-              .filter((id): id is string => Boolean(id))
-          ),
-        ];
-
-        let doctorById = new Map<string, DoctorRow>();
-
-        if (doctorIds.length > 0) {
-          const { data: doctors, error: doctorsError } = await supabase
-            .from("doctors")
-            .select("id, full_name, avatar_url, specialty")
-            .in("id", doctorIds);
-
-          if (doctorsError) throw doctorsError;
-
-          doctorById = new Map(
-            ((doctors ?? []) as DoctorRow[]).map((doctor) => [doctor.id, doctor])
-          );
-        }
-
-        // ── 5. Format and store ──
-        const formattedAppointments: Appointment[] = appointmentRows.map(
-          (appointment) => {
-            const doctor = appointment.doctor_id
-              ? doctorById.get(appointment.doctor_id)
-              : undefined;
-
-            return {
-              ...appointment,
-              doctor: doctor
-                ? {
-                    id: doctor.id,
-                    full_name: doctor.full_name ?? undefined,
-                    avatar_url: doctor.avatar_url ?? undefined,
-                    specialty: getSpecialtyName(doctor),
-                  }
-                : null,
-            };
-          }
-        );
-
-        if (isMounted) {
-          setAppointments(formattedAppointments);
-        }
-      } catch (err: unknown) {
-        console.error("Appointments fetch error:", err);
-        if (isMounted) {
-          const message =
-            err instanceof Error ? err.message : "Failed to load appointments";
-          setError(message);
-        }
-      } finally {
-        if (isMounted) setLoading(false);
-      }
+    const load = () => {
+      void fetchAppointments();
     };
 
     load();
 
-    return () => {
-      isMounted = false;
+    // A booking completes on a separate route, so by the time the user reaches
+    // this list the appointment already exists server-side. These listeners pick
+    // it up without a manual reload: "focus" covers coming back to the tab, and
+    // "visibilitychange" covers returning from the confirmation page on mobile
+    // where focus events are not reliably fired.
+    // Both handlers pass `silent`, so the rows are swapped in place rather than
+    // the list dropping back to skeletons. The listeners are wrapped rather than
+    // passing `fetchAppointments` directly, because the event object would
+    // otherwise arrive as the `silent` argument.
+    const onFocus = () => {
+      void fetchAppointments(true);
     };
-  }, [isLoggedIn, user?.id, isInitializing]);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void fetchAppointments(true);
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [isInitializing, refreshKey]);
 
   // ── 6. Split into upcoming / past using LOCAL today (not UTC) ──
   const today = getTodayLocalDate();
@@ -189,7 +162,7 @@ export default function AppointmentsPage() {
   const displayed = activeTab === "upcoming" ? upcoming : past;
 
   const refresh = () => {
-    window.location.reload();
+    setRefreshKey((key) => key + 1);
   };
 
   if (isInitializing) {
@@ -208,7 +181,8 @@ export default function AppointmentsPage() {
           <Link
             href="/patient/dashboard"
             aria-label="Back to your dashboard"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-500 text-slate-200 transition-colors hover:bg-blue-700 hover:text-white px-4"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-500 text-white
+             hover:bg-blue-700 px-4"
           >
             <span aria-hidden="true">&larr;</span> Go to Dashboard
           </Link>
