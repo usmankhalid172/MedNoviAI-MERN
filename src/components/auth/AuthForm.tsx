@@ -35,7 +35,8 @@ function normalizeEmail(email: string) {
 
 export default function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
-  const { login } = useAuth();
+  const auth = useAuth();
+  const login = auth.login;
 
   const [role, setRole] = useState<Role>("patient");
   const [name, setName] = useState("");
@@ -120,6 +121,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
       }
 
       if (isSignUp) {
+
         const { data, error } =
           await supabase.auth.signUp({
             email: normalizedEmail,
@@ -132,6 +134,18 @@ export default function AuthForm({ mode }: AuthFormProps) {
                   specialty: specialty.trim(),
                 }),
               },
+=======
+        const { data, error } = await supabase!.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            data: {
+              name: name.trim(),
+              role,
+              ...(role === "doctor" && {
+                specialty: specialty.trim(),
+              }),
+
             },
           });
 
@@ -178,11 +192,18 @@ export default function AuthForm({ mode }: AuthFormProps) {
         return;
       }
 
+
       const { data, error } =
         await supabase.auth.signInWithPassword({
           email: normalizedEmail,
           password,
         });
+=======
+      const { data, error } = await supabase!.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
+
 
       if (error) {
         showErrorToast(
@@ -193,6 +214,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
       }
 
       const sessionUser = data.user;
+
 
       const meta = (
         sessionUser?.user_metadata ?? {}
@@ -233,6 +255,27 @@ export default function AuthForm({ mode }: AuthFormProps) {
           );
         }
       );
+=======
+      const meta = (sessionUser?.user_metadata || {}) as Record<string, string | undefined>;
+      const storedRole = meta.role || role; // Agar metadata mein role nahi hai, to state wala role use karein
+        
+      login({
+        id: sessionUser?.id,
+        name: meta.name || sessionUser?.email || normalizedEmail,
+        email: sessionUser?.email || normalizedEmail,
+        role: storedRole,
+        specialty: meta.specialty,
+      });
+      
+      showSuccessToastAndNavigate("Login successful!", () => {
+        // Hamesha strict routing karein based on resolved role
+        if (storedRole === "doctor") {
+          router.push("/doctor/dashboard");
+        } else {
+          router.push("/patient/dashboard");
+        }
+      });
+
     } catch (error) {
       console.error("Error during auth:", error);
 
