@@ -9,7 +9,11 @@ import {
   type ReactNode,
 } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+
+import {
+  supabase,
+  isSupabaseConfigured,
+} from "@/lib/supabase";
 
 export interface AuthUser {
   id?: string;
@@ -29,6 +33,12 @@ export interface AuthContextType {
   logout: () => Promise<void>;
 }
 
+
+export const AuthContext =
+  createContext<AuthContextType | undefined>(
+    undefined
+  );
+=======
 export const AuthContext = createContext<AuthContextType>({
   isLoggedIn: false,
   isInitializing: true,
@@ -39,38 +49,59 @@ export const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
 });
 
+
 interface AuthProviderProps {
   children: ReactNode;
 }
 
-function userFromSession(session: Session | null): AuthUser | null {
+function userFromSession(
+  session: Session | null
+): AuthUser | null {
   const authUser = session?.user;
 
-  if (!authUser) return null;
+  if (!authUser) {
+    return null;
+  }
 
-  const meta = (authUser.user_metadata ?? {}) as Record<
-    string,
-    string | undefined
-  >;
+  const meta = (
+    authUser.user_metadata ?? {}
+  ) as Record<string, string | undefined>;
 
   return {
     id: authUser.id,
-    name: meta.name || authUser.email || "",
+    name:
+      meta.name ||
+      authUser.email ||
+      "",
     email: authUser.email,
-    role: meta.role || "patient",
+    role:
+      meta.role ||
+      "patient",
     specialty: meta.specialty,
   };
 }
 
+
+export const AuthProvider = ({
+  children,
+}: AuthProviderProps) => {
+  const [isInitializing, setIsInitializing] =
+    useState(true);
+=======
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
 
-  useEffect(() => {
-    let active = true;
 
+  const [isLoggedIn, setIsLoggedIn] =
+    useState(false);
+
+
+  const [user, setUser] =
+    useState<AuthUser | null>(null);
+=======
     if (!supabase) {
       setIsInitializing(false);
       return;
@@ -79,16 +110,78 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!active) return;
 
-      const nextUser = userFromSession(session);
 
+  useEffect(() => {
+    let active = true;
+
+
+    if (
+      !isSupabaseConfigured ||
+      !supabase
+    ) {
+=======
       setSession(session);
       setUser(nextUser);
       setIsLoggedIn(!!nextUser);
+
       setIsInitializing(false);
-    });
+
+      return () => {
+        active = false;
+      };
+    }
+
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (!active) {
+          return;
+        }
+
+        const nextUser =
+          userFromSession(session);
+
+        setUser(nextUser);
+        setIsLoggedIn(!!nextUser);
+        setIsInitializing(false);
+      })
+      .catch((error) => {
+        console.error(
+          "Failed to get Supabase session:",
+          error
+        );
+
+        if (active) {
+          setIsInitializing(false);
+        }
+      });
 
     const {
       data: { subscription },
+
+    } =
+      supabase.auth.onAuthStateChange(
+        (_event, session) => {
+          if (!active) {
+            return;
+          }
+
+          const nextUser =
+            userFromSession(session);
+
+          setUser(nextUser);
+          setIsLoggedIn(
+            !!nextUser
+          );
+
+          if (!session) {
+            localStorage.removeItem(
+              "token"
+            );
+          }
+        }
+      );
+=======
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
 
@@ -100,17 +193,38 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setIsInitializing(false);
     });
 
+
     return () => {
       active = false;
       subscription.unsubscribe();
     };
   }, []);
 
-  const login = useCallback((nextUser: AuthUser) => {
-    setIsLoggedIn(true);
-    setUser(nextUser);
-  }, []);
+  const login = useCallback(
+    (nextUser: AuthUser) => {
+      setIsLoggedIn(true);
+      setUser(nextUser);
+    },
+    []
+  );
 
+
+  const logout = useCallback(
+    async () => {
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
+
+      localStorage.removeItem(
+        "token"
+      );
+
+      setIsLoggedIn(false);
+      setUser(null);
+    },
+    []
+  );
+=======
   const logout = useCallback(async () => {
     if (supabase) {
       await supabase.auth.signOut();
@@ -120,14 +234,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setSession(null);
   }, []);
 
+
   return (
     <AuthContext.Provider
       value={{
         isLoggedIn,
         isInitializing,
+
+        user,
+=======
         isLoading: isInitializing,
         user,
         session,
+
         login,
         logout,
       }}
@@ -138,9 +257,21 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 };
 
 export function useAuth() {
+
+  const context =
+    useContext(AuthContext);
+
+  if (context === undefined) {
+    throw new Error(
+      "useAuth must be used within an AuthProvider"
+    );
+  }
+
+=======
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
+
   return context;
 }

@@ -15,8 +15,12 @@ import {
   Stethoscope,
   XCircle,
 } from "lucide-react";
+
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/lib/supabase";
+import {
+  supabase,
+  isSupabaseConfigured,
+} from "@/lib/supabase";
 
 type AuthMode = "signin" | "signup";
 type Role = "patient" | "doctor";
@@ -43,6 +47,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
   const [toastMessage, setToastMessage] = useState<{
     text: string;
     type: "success" | "error";
@@ -54,7 +59,10 @@ export default function AuthForm({ mode }: AuthFormProps) {
     message: string,
     navigate: () => void
   ) => {
-    setToastMessage({ text: message, type: "success" });
+    setToastMessage({
+      text: message,
+      type: "success",
+    });
 
     window.setTimeout(() => {
       navigate();
@@ -62,11 +70,16 @@ export default function AuthForm({ mode }: AuthFormProps) {
   };
 
   const showErrorToast = (message: string) => {
-    setToastMessage({ text: message, type: "error" });
+    setToastMessage({
+      text: message,
+      type: "error",
+    });
   };
 
   useEffect(() => {
-    if (!toastMessage) return;
+    if (!toastMessage) {
+      return;
+    }
 
     const timer = window.setTimeout(() => {
       setToastMessage(null);
@@ -97,7 +110,31 @@ export default function AuthForm({ mode }: AuthFormProps) {
     setIsSubmitting(true);
 
     try {
+      // Prevent calling supabase.auth when Supabase is not configured.
+      if (!isSupabaseConfigured || !supabase) {
+        const message =
+          "Supabase is not configured. Please configure the Supabase environment variables first.";
+
+        setErrorMessage(message);
+        showErrorToast(message);
+        return;
+      }
+
       if (isSignUp) {
+
+        const { data, error } =
+          await supabase.auth.signUp({
+            email: normalizedEmail,
+            password,
+            options: {
+              data: {
+                name: name.trim(),
+                role,
+                ...(role === "doctor" && {
+                  specialty: specialty.trim(),
+                }),
+              },
+=======
         const { data, error } = await supabase!.auth.signUp({
           email: normalizedEmail,
           password,
@@ -108,38 +145,42 @@ export default function AuthForm({ mode }: AuthFormProps) {
               ...(role === "doctor" && {
                 specialty: specialty.trim(),
               }),
+
             },
-          },
-        });
+          });
 
         if (error) {
           showErrorToast(
-            error.message || "Signup failed. Please try again."
+            error.message ||
+              "Signup failed. Please try again."
           );
           return;
         }
 
         const sessionUser = data.user;
-        const meta = (sessionUser?.user_metadata ?? {}) as Record<
-          string,
-          string | undefined
-        >;
+
+        const meta = (
+          sessionUser?.user_metadata ?? {}
+        ) as Record<string, string | undefined>;
 
         if (data.session) {
           login({
             id: sessionUser?.id,
             name: meta.name || name.trim(),
-            email: sessionUser?.email || normalizedEmail,
+            email:
+              sessionUser?.email || normalizedEmail,
             role: meta.role || role,
             specialty: meta.specialty,
           });
 
-          showSuccessToastAndNavigate("Registration successful!", () =>
-            router.push(
-              role === "doctor"
-                ? "/doctor/dashboard"
-                : "/patient/dashboard"
-            )
+          showSuccessToastAndNavigate(
+            "Registration successful!",
+            () =>
+              router.push(
+                role === "doctor"
+                  ? "/doctor/dashboard"
+                  : "/patient/dashboard"
+              )
           );
         } else {
           showSuccessToastAndNavigate(
@@ -151,17 +192,70 @@ export default function AuthForm({ mode }: AuthFormProps) {
         return;
       }
 
+
+      const { data, error } =
+        await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        });
+=======
       const { data, error } = await supabase!.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
 
+
       if (error) {
-        showErrorToast(error.message || "Invalid email or password.");
+        showErrorToast(
+          error.message ||
+            "Invalid email or password."
+        );
         return;
       }
 
       const sessionUser = data.user;
+
+
+      const meta = (
+        sessionUser?.user_metadata ?? {}
+      ) as Record<string, string | undefined>;
+
+      const storedRole = meta.role;
+
+      if (storedRole && storedRole !== role) {
+        await supabase.auth.signOut();
+
+        showErrorToast(
+          "You have selected an incorrect role for this email."
+        );
+
+        return;
+      }
+
+      login({
+        id: sessionUser?.id,
+        name:
+          meta.name ||
+          sessionUser?.email ||
+          normalizedEmail,
+        email:
+          sessionUser?.email ||
+          normalizedEmail,
+        role: storedRole || role,
+        specialty: meta.specialty,
+      });
+
+      showSuccessToastAndNavigate(
+        "Login successful!",
+        () => {
+          router.push(
+            (storedRole || role) === "doctor"
+              ? "/doctor/dashboard"
+              : "/patient/dashboard"
+          );
+        }
+      );
+=======
       const meta = (sessionUser?.user_metadata || {}) as Record<string, string | undefined>;
       const storedRole = meta.role || role; // Agar metadata mein role nahi hai, to state wala role use karein
         
@@ -181,13 +275,18 @@ export default function AuthForm({ mode }: AuthFormProps) {
           router.push("/patient/dashboard");
         }
       });
+
     } catch (error) {
       console.error("Error during auth:", error);
-      showErrorToast("An unexpected error occurred. Please try again.");
+
+      showErrorToast(
+        "An unexpected error occurred. Please try again."
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#102f5f] px-4 py-8 sm:px-6">
       {/* Toast Notifications */}
@@ -204,6 +303,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
           ) : (
             <XCircle className="size-4 shrink-0" />
           )}
+
           <span>{toastMessage.text}</span>
         </div>
       )}
@@ -264,7 +364,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
           <div className="max-w-md">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#2563eb]">
-              {isSignUp ? "Join the care community" : "Welcome back"}
+              {isSignUp
+                ? "Join the care community"
+                : "Welcome back"}
             </p>
 
             <h2 className="mt-2 text-3xl font-bold tracking-tight text-[#173b68]">
@@ -302,7 +404,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
                           : "border-[#d5e2ef] bg-white text-[#718399] hover:border-[#93b9e9]"
                       }`}
                     >
-                      <span className="block">{option}</span>
+                      <span className="block">
+                        {option}
+                      </span>
 
                       <span className="mt-1 block text-[11px] font-normal opacity-75">
                         {option === "patient"
@@ -328,7 +432,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
                   id="name"
                   required
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) =>
+                    setName(event.target.value)
+                  }
                   placeholder="Enter your full name"
                   className="auth-input"
                 />
@@ -348,7 +454,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
                   id="specialty"
                   required
                   value={specialty}
-                  onChange={(event) => setSpecialty(event.target.value)}
+                  onChange={(event) =>
+                    setSpecialty(event.target.value)
+                  }
                   placeholder="e.g. Cardiologist"
                   className="auth-input"
                 />
@@ -368,7 +476,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 type="email"
                 required
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) =>
+                  setEmail(event.target.value)
+                }
                 placeholder="you@example.com"
                 className="auth-input"
               />
@@ -385,21 +495,29 @@ export default function AuthForm({ mode }: AuthFormProps) {
               <div className="relative">
                 <input
                   id="password"
-                  type={showPassword ? "text" : "password"}
+                  type={
+                    showPassword ? "text" : "password"
+                  }
                   required
                   minLength={6}
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
                   placeholder="At least 6 characters"
                   className="auth-input pr-12"
                 />
 
                 <button
                   type="button"
-                  onClick={() => setShowPassword((visible) => !visible)}
+                  onClick={() =>
+                    setShowPassword((visible) => !visible)
+                  }
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[#718399]"
                   aria-label={
-                    showPassword ? "Hide password" : "Show password"
+                    showPassword
+                      ? "Hide password"
+                      : "Show password"
                   }
                 >
                   {showPassword ? (
@@ -425,7 +543,9 @@ export default function AuthForm({ mode }: AuthFormProps) {
                   type="password"
                   required
                   value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  onChange={(event) =>
+                    setConfirmPassword(event.target.value)
+                  }
                   placeholder="Repeat your password"
                   className="auth-input"
                 />
@@ -461,13 +581,17 @@ export default function AuthForm({ mode }: AuthFormProps) {
           </form>
 
           <p className="mt-7 text-center text-sm text-[#718399]">
-            {isSignUp ? "Already have an account?" : "New to MedNoviAI?"}{" "}
+            {isSignUp
+              ? "Already have an account?"
+              : "New to MedNoviAI?"}{" "}
 
             <Link
               href={isSignUp ? "/login" : "/signup"}
               className="font-semibold text-[#2563eb] hover:underline"
             >
-              {isSignUp ? "Sign in" : "Create an account"}
+              {isSignUp
+                ? "Sign in"
+                : "Create an account"}
             </Link>
           </p>
         </section>
