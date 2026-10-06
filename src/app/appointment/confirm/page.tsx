@@ -30,7 +30,7 @@ import {
 
 function ConfirmationContent() {
   const searchParams = useSearchParams();
-  const { user } = useContext(AuthContext);
+  const user = useContext(AuthContext)?.user;
 
   const [copied, setCopied] = useState(false);
 
