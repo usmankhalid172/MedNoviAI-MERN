@@ -17,16 +17,98 @@ import {
 } from "@/lib/appointmentsClient";
 import {
   CheckCircle2,
+  Clock,
+  XCircle,
   Copy,
   Check,
   Printer,
   CalendarDays,
-  Clock,
   MapPin,
   UserRound,
   LayoutDashboard,
   ListChecks,
 } from "lucide-react";
+
+interface StatusConfig {
+  heading: string;
+  subheading: string;
+  icon: React.ComponentType<{ className?: string }>;
+  iconBgClass: string;
+  iconColorClass: string;
+  badgeBgClass: string;
+  badgeTextClass: string;
+  badgeBorderClass: string;
+  receiptNote: string;
+}
+
+const STATUS_CONFIGS: Record<string, StatusConfig> = {
+  pending: {
+    heading: "Appointment Request Submitted",
+    subheading:
+      "Your appointment request has been submitted and is currently pending approval by your doctor. You can track its status in My Appointments.",
+    icon: Clock,
+    iconBgClass: "bg-amber-100",
+    iconColorClass: "text-amber-600",
+    badgeBgClass: "bg-amber-50",
+    badgeTextClass: "text-amber-700",
+    badgeBorderClass: "border-amber-200",
+    receiptNote:
+      "This receipt acknowledges your appointment request with MedNoviAI. The booking is pending doctor confirmation.",
+  },
+  confirmed: {
+    heading: "Appointment Confirmed!",
+    subheading:
+      "Your appointment has been successfully booked. Please keep your appointment ID for future reference.",
+    icon: CheckCircle2,
+    iconBgClass: "bg-green-100",
+    iconColorClass: "text-green-600",
+    badgeBgClass: "bg-green-50",
+    badgeTextClass: "text-green-700",
+    badgeBorderClass: "border-green-200",
+    receiptNote:
+      "This receipt confirms your scheduled appointment with MedNoviAI.",
+  },
+  cancelled: {
+    heading: "Appointment Cancelled",
+    subheading:
+      "This appointment has been cancelled. You can book a new appointment at any time.",
+    icon: XCircle,
+    iconBgClass: "bg-red-100",
+    iconColorClass: "text-red-600",
+    badgeBgClass: "bg-red-50",
+    badgeTextClass: "text-red-700",
+    badgeBorderClass: "border-red-200",
+    receiptNote:
+      "This receipt acknowledges the cancellation of your appointment with MedNoviAI.",
+  },
+  completed: {
+    heading: "Appointment Completed",
+    subheading:
+      "This appointment visit has been completed. Thank you for choosing MedNoviAI.",
+    icon: CheckCircle2,
+    iconBgClass: "bg-blue-100",
+    iconColorClass: "text-blue-600",
+    badgeBgClass: "bg-blue-50",
+    badgeTextClass: "text-blue-700",
+    badgeBorderClass: "border-blue-200",
+    receiptNote:
+      "This receipt documents your completed appointment visit with MedNoviAI.",
+  },
+};
+
+const DEFAULT_STATUS_CONFIG: StatusConfig = {
+  heading: "Appointment Details",
+  subheading:
+    "Your appointment request has been received. Please review the details below.",
+  icon: Clock,
+  iconBgClass: "bg-slate-100",
+  iconColorClass: "text-slate-600",
+  badgeBgClass: "bg-slate-50",
+  badgeTextClass: "text-slate-700",
+  badgeBorderClass: "border-slate-200",
+  receiptNote:
+    "This receipt documents your appointment request with MedNoviAI.",
+};
 
 function ConfirmationContent() {
   const searchParams = useSearchParams();
@@ -72,7 +154,13 @@ function ConfirmationContent() {
   const specialty = appointment?.doctor?.specialty ?? "General Medicine";
   const date = appointment?.appointment_date ?? "";
   const time = appointment?.appointment_time?.slice(0, 5) ?? "";
-  const status = appointment?.status ?? "pending";
+
+  const normalizedStatus = (appointment?.status || "").toLowerCase().trim();
+  const statusConfig = STATUS_CONFIGS[normalizedStatus] || DEFAULT_STATUS_CONFIG;
+  const StatusIcon = statusConfig.icon;
+  const statusLabel = normalizedStatus
+    ? normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1)
+    : "Pending";
 
   const fee = Number(searchParams.get("fee") || 0);
 
@@ -186,21 +274,22 @@ function ConfirmationContent() {
             </span>
           </div>
 
-          {/* SUCCESS */}
+          {/* STATUS PRESENTATION */}
           <div className="mx-auto max-w-3xl">
             <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-10">
-              {/* Success Icon */}
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-                <CheckCircle2 className="h-12 w-12 text-green-600" />
+              {/* Status Icon */}
+              <div
+                className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full ${statusConfig.iconBgClass}`}
+              >
+                <StatusIcon className={`h-12 w-12 ${statusConfig.iconColorClass}`} />
               </div>
 
               <h1 className="mt-6 text-3xl font-bold text-slate-900">
-                Appointment Confirmed!
+                {statusConfig.heading}
               </h1>
 
               <p className="mx-auto mt-3 max-w-xl text-slate-500">
-                Your appointment has been successfully booked.
-                Please keep your appointment ID for future reference.
+                {statusConfig.subheading}
               </p>
 
               {/* Appointment ID */}
@@ -324,13 +413,15 @@ function ConfirmationContent() {
               </div>
 
               {/* STATUS */}
-              <div className="mt-6 rounded-xl bg-green-50 p-4 text-center">
-                <p className="text-sm text-green-700">
+              <div
+                className={`mt-6 rounded-xl border p-4 text-center ${statusConfig.badgeBgClass} ${statusConfig.badgeBorderClass}`}
+              >
+                <p className={`text-sm ${statusConfig.badgeTextClass}`}>
                   Booking Status
                 </p>
 
-                <p className="mt-1 font-semibold capitalize text-green-700">
-                  {status}
+                <p className={`mt-1 font-semibold capitalize ${statusConfig.badgeTextClass}`}>
+                  {statusLabel}
                 </p>
               </div>
 
@@ -413,7 +504,7 @@ function ConfirmationContent() {
               </p>
 
               <p className="font-semibold capitalize">
-                {status}
+                {statusLabel}
               </p>
             </div>
 
@@ -488,8 +579,7 @@ function ConfirmationContent() {
 
           <div className="mt-10 border-t pt-6 text-sm text-gray-500">
             <p>
-              This receipt confirms your appointment booking
-              with MedNoviAI.
+              {statusConfig.receiptNote}
             </p>
 
             <p className="mt-2">
