@@ -11,6 +11,7 @@ import CancelModal from "@/components/appointments/CancelModal";
 import RescheduleModal from "@/components/appointments/RescheduleModal";
 import Navbar from "@/components/shared/Navbar";
 import Link from "next/link";
+import { toast } from "sonner";
 
 type Tab = "upcoming" | "past";
 
@@ -165,6 +166,12 @@ export default function AppointmentsPage() {
     setRefreshKey((key) => key + 1);
   };
 
+  const handleCancelSuccess = () => {
+    setCancelId(null);
+    toast.success("Appointment cancelled successfully.");
+    refresh();
+  };
+
   if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -251,7 +258,7 @@ export default function AppointmentsPage() {
         <CancelModal
           appointmentId={cancelId}
           onClose={() => setCancelId(null)}
-          onSuccess={refresh}
+          onSuccess={handleCancelSuccess}
         />
       )}
 

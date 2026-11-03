@@ -18,22 +18,31 @@ export default function CancelModal({
   const [error, setError] = useState<string | null>(null);
 
   const handleCancel = async () => {
+    // Prevent duplicate cancellation requests while in progress
+    if (loading) return;
+
     setLoading(true);
     setError(null);
 
-    // Goes through /api/appointments. The previous direct `update` here could
-    // not distinguish "cancelled" from "RLS returned zero rows", so it reported
-    // success even when nothing was written. The API checks the affected row.
-    const result = await cancelAppointment(appointmentId);
+    try {
+      // Goes through /api/appointments. The previous direct `update` here could
+      // not distinguish "cancelled" from "RLS returned zero rows", so it reported
+      // success even when nothing was written. The API checks the affected row.
+      const result = await cancelAppointment(appointmentId);
 
-    setLoading(false);
+      if (!result.ok) {
+        setError(result.message);
+        setLoading(false);
+        return;
+      }
 
-    if (!result.ok) {
-      setError(result.message);
-      return;
+      setLoading(false);
+      onClose();
+      onSuccess();
+    } catch {
+      setError("Failed to cancel appointment. Please try again.");
+      setLoading(false);
     }
-
-    onSuccess();
   };
 
   return (
