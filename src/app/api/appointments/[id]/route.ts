@@ -277,7 +277,7 @@ export async function PATCH(
 
     const { data: current, error: readError } = await caller.supabase
       .from("appointments")
-      .select("doctor_id, status")
+      .select("patient_id, doctor_id, status, appointment_date, appointment_time")
       .eq("id", id)
       .maybeSingle();
 
@@ -295,7 +295,13 @@ export async function PATCH(
       );
     }
 
-    const existing = current as { doctor_id: string | null; status: string };
+    const existing = current as {
+      patient_id: string | null;
+      doctor_id: string | null;
+      status: string;
+      appointment_date: string;
+      appointment_time: string;
+    };
 
     if (doctorOnly.includes(next) && existing.doctor_id !== caller.userId) {
       return NextResponse.json(
@@ -308,6 +314,41 @@ export async function PATCH(
         },
         { status: 403 }
       );
+    }
+
+    // BOOK-02: Before approving, block if the patient already has a confirmed
+    // appointment at the same date and time with another doctor. This closes
+    // the gap where a patient could book overlapping slots with different
+    // doctors and have both approved.
+    if (next === "confirmed" && existing.patient_id) {
+      const timeWithoutSeconds = existing.appointment_time.replace(/:00$/, "");
+
+      const { data: overlaps, error: overlapError } = await caller.supabase
+        .from("appointments")
+        .select("id, doctor_id")
+        .eq("patient_id", existing.patient_id)
+        .eq("appointment_date", existing.appointment_date)
+        .in("appointment_time", [existing.appointment_time, timeWithoutSeconds])
+        .eq("status", "confirmed")
+        .neq("id", id);
+
+      if (overlapError) {
+        return NextResponse.json(
+          { error: overlapError.message, code: "upstream" },
+          { status: 502 }
+        );
+      }
+
+      if (overlaps && overlaps.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Cannot approve: this patient already has a confirmed appointment at this time with another doctor. Please cancel one of the appointments first.",
+            code: "patient_conflict",
+          },
+          { status: 409 }
+        );
+      }
     }
 
     const { data, error } = await caller.supabase

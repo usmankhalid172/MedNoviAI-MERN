@@ -321,10 +321,14 @@ function errorIsMissingRpc(error: { code?: string; message?: string }): boolean 
 }
 
 /**
- * Confirms the requested slot is genuinely bookable.
+ * Confirms the requested slot is genuinely bookable for the doctor.
  *
  * Re-checked here rather than trusted from the client: the wizard hides slots
  * that are taken, but that is presentation, not enforcement.
+ *
+ * NOTE: This only verifies the DOCTOR is free. It does not verify whether the
+ * patient already has an appointment at the same time with another doctor.
+ * See `checkPatientHasOverlap` below.
  */
 async function checkSlotIsBookable(
   supabase: SupabaseClient,
@@ -434,6 +438,65 @@ async function checkSlotIsBookable(
 }
 
 /**
+ * Blocks a patient from having two live appointments at the same date and time.
+ *
+ * The doctor-level slot check (`checkSlotIsBookable`) only verifies that the
+ * doctor is free at that time. This verifies the PATIENT is also free - so a
+ * patient cannot book the same 9:00 AM slot with two different doctors.
+ *
+ * Counts both `pending` and `confirmed` appointments, because a pending booking
+ * will almost certainly become a confirmed one and the patient still cannot be
+ * in two places at once.
+ *
+ * Excludes the appointment being rescheduled (if `excludeAppointmentId` is
+ * passed) so re-picking the same slot for the same appointment is not reported
+ * as a conflict with itself.
+ */
+async function checkPatientHasOverlap(
+  supabase: SupabaseClient,
+  patientId: string,
+  date: string,
+  time: string,
+  excludeAppointmentId?: string
+): Promise<BookingFailure | null> {
+  // Handle both time formats in the DB: "HH:MM:SS" (written by this flow) and
+  // "HH:MM" (older rows that predate the normalisation).
+  const timeWithoutSeconds = time.replace(/:00$/, "");
+
+  let query = supabase
+    .from("appointments")
+    .select("id, doctor_id, appointment_time")
+    .eq("patient_id", patientId)
+    .eq("appointment_date", date)
+    .in("appointment_time", [time, timeWithoutSeconds])
+    .in("status", ["pending", "confirmed"]);
+
+  if (excludeAppointmentId) {
+    query = query.neq("id", excludeAppointmentId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return failure(
+      "upstream",
+      `Could not verify your existing appointments: ${error.message}`,
+      502
+    );
+  }
+
+  if (data && data.length > 0) {
+    return failure(
+      "conflict",
+      "You already have an appointment at this time. Please choose a different slot.",
+      409
+    );
+  }
+
+  return null;
+}
+
+/**
  * True when a failure is PostgREST reporting the `patient_name` column is absent,
  * which means supabase/appointment_patient_name.sql has not been applied yet.
  */
@@ -490,6 +553,11 @@ async function insertAppointment(
  * `patientId` is always the token's subject, so a request cannot book on
  * someone else's behalf. Returns the created row, or a typed failure the client
  * can act on.
+ *
+ * Two conflicts are checked in order:
+ *  1. The patient already has an appointment at the same date and time
+ *     (`checkPatientHasOverlap`) - BOOK-02 fix.
+ *  2. The doctor is not free at the requested slot (`checkSlotIsBookable`).
  */
 export async function bookAppointment(
   supabase: SupabaseClient,
@@ -497,6 +565,16 @@ export async function bookAppointment(
   request: ValidatedRequest,
   patientName?: string
 ): Promise<BookingResult> {
+  // BOOK-02: block overlapping appointments for the same patient.
+  const overlapError = await checkPatientHasOverlap(
+    supabase,
+    patientId,
+    request.date,
+    request.time
+  );
+  if (overlapError) return overlapError;
+
+  // Existing check: confirm the doctor is free at this slot.
   const slotError = await checkSlotIsBookable(supabase, request);
   if (slotError) return slotError;
 
@@ -579,7 +657,9 @@ export type RescheduleResult = BookingResult | { ok: false; code: "not_found"; m
  *
  * Validates availability and conflicts the same way booking does, and excludes
  * the appointment itself so re-picking its current slot is not treated as a
- * conflict with itself.
+ * conflict with itself. Also enforces the patient overlap rule (BOOK-02) so a
+ * rescheduled appointment cannot overlap another appointment the patient
+ * already has with a different doctor.
  */
 export async function rescheduleAppointment(
   supabase: SupabaseClient,
@@ -588,7 +668,7 @@ export async function rescheduleAppointment(
 ): Promise<RescheduleResult> {
   const { data: current, error: readError } = await supabase
     .from("appointments")
-    .select("id, doctor_id, status, notes")
+    .select("id, doctor_id, patient_id, status, notes")
     .eq("id", appointmentId)
     .maybeSingle();
 
@@ -604,6 +684,7 @@ export async function rescheduleAppointment(
   const existing = current as {
     id: string;
     doctor_id: string;
+    patient_id: string;
     status: string;
     notes: string | null;
   };
@@ -624,6 +705,16 @@ export async function rescheduleAppointment(
   });
 
   if (!validated.ok) return validated;
+
+  // BOOK-02: same patient overlap check, excluding this appointment itself.
+  const overlapError = await checkPatientHasOverlap(
+    supabase,
+    existing.patient_id,
+    validated.value.date,
+    validated.value.time,
+    appointmentId
+  );
+  if (overlapError) return overlapError;
 
   const slotError = await checkSlotIsBookable(
     supabase,
