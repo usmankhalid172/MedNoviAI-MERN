@@ -64,8 +64,7 @@ export const useAiChat = () => {
         {
           id: "welcome-" + Date.now(),
           sender: "ai",
-          content: "Hello! I am MedNovi AI Assistant. Complete your intake details or describe your symptoms below to get personalized clinical triage guidance.",
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          content: "⚠️ I am currently unable to connect to the AI service. Please try again later.",             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           suggestedPrompts: [
             "What should I do for a mild fever?",
             "When should I see a cardiologist?",
